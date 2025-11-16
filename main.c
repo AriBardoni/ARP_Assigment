@@ -105,7 +105,7 @@ int main() {
         chdir(PATH);
 
         char fdItoB_r[16], fdBtoD_w[16], fdDtoB_r[16];
-        snprintf(fdItoB_r,16,"%d",ItoB[1]); // NOTA
+        snprintf(fdItoB_r,16,"%d",ItoB[0]); // CORRETTO
         snprintf(fdBtoD_w,16,"%d",BtoD[1]);
         snprintf(fdDtoB_r,16,"%d",DtoB[0]);
 
@@ -116,11 +116,12 @@ int main() {
             "konsole",
             "-e",
             blackPath,
-            fdItoB_r,
+            fdItoB_r,  // ORA È ItoB[0]
             fdBtoD_w,
             fdDtoB_r,
             NULL
         };
+
 
         execvp("konsole", argsB);
         die("exec blackboard");
