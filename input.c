@@ -41,7 +41,7 @@ int main(int argc, char **argv){
     timeout(50);
 
     printw("=== INPUT CONTROLLER ===\n");
-    printw("i/j/k/l = movimento\n");
+    printw("i/j/k/l/u/o/n/, = movimento\n");
     printw("b = brake | r = reset | q = quit\n");
     refresh();
 
@@ -49,22 +49,34 @@ int main(int argc, char **argv){
     //     LOOP DI INPUT
     // -----------------------------
     while(1){
+
         int c = getch();
         if(c == ERR) continue;
 
         KeyMsg km = (KeyMsg){0,0,0};
+        float step = 1.0f;
 
         switch(c){
             case 'q': km.cmd = 9; break;
-            case 'i': km.dFy = -1; break;
-            case 'k': km.dFy = +1; break;
-            case 'j': km.dFx = -1; break;
-            case 'l': km.dFx = +1; break;
+
+            case 'i': km.dFy = -step; break;   // su
+            case 'k': km.dFy = +step; break;   // giù
+            case 'j': km.dFx = -step; break;   // sinistra
+            case 'l': km.dFx = +step; break;   // destra
+
+            // DIAGONALI
+            case 'u': km.dFx = -step; km.dFy = -step; break;
+            case 'o': km.dFx = +step; km.dFy = -step; break;
+            case 'n': km.dFx = -step; km.dFy = +step; break;
+            case ',': km.dFx = +step; km.dFy = +step; break;
+
             case 'b': km.cmd = 1; break;
             case 'r': km.cmd = 2; break;
+
             default: continue;
         }
 
+        // ---- SCRITTURA SULLA PIPE ----
         write(fdItoB, &km, sizeof(km));
 
         if(km.cmd == 9)
