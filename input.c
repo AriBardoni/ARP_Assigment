@@ -11,11 +11,9 @@ int main(int argc, char **argv){
         return 1;
     }
 
-    int fdItoB = atoi(argv[1]);
+    int fdItoB = atoi(argv[1]);  // pipe to blackboard
 
-    // -----------------------------
-    //  FORZA USO DI /dev/tty
-    // -----------------------------
+    // Open /dev/tty to use ncurses in this terminal
     FILE *term_in  = fopen("/dev/tty", "r");
     FILE *term_out = fopen("/dev/tty", "w");
 
@@ -32,39 +30,35 @@ int main(int argc, char **argv){
 
     set_term(scr);
 
-    // -----------------------------
-    //  CONFIGURAZIONE CURSES
-    // -----------------------------
+    // Setup ncurses mode
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
-    timeout(50);
+    timeout(50); // getch waits max 50ms
 
     printw("=== INPUT CONTROLLER ===\n");
-    printw("i/j/k/l/u/o/n/, = movimento\n");
+    printw("i/j/k/l/u/o/n/, = movement\n");
     printw("b = brake | r = reset | q = quit\n");
     refresh();
 
-    // -----------------------------
-    //     LOOP DI INPUT
-    // -----------------------------
     while(1){
 
-        int c = getch();
+        int c = getch();     // check keyboard
         if(c == ERR) continue;
 
         KeyMsg km = (KeyMsg){0,0,0};
-        float step = 1.0f;
+        float step = 1.0f;   // force increment
 
+        // Map keys to force increments
         switch(c){
             case 'q': km.cmd = 9; break;
 
-            case 'i': km.dFy = -step; break;   // su
-            case 'k': km.dFy = +step; break;   // giù
-            case 'j': km.dFx = -step; break;   // sinistra
-            case 'l': km.dFx = +step; break;   // destra
+            case 'i': km.dFy = -step; break;   // up
+            case 'k': km.dFy = +step; break;   // down
+            case 'j': km.dFx = -step; break;   // left
+            case 'l': km.dFx = +step; break;   // right
 
-            // DIAGONALI
+            // diagonals
             case 'u': km.dFx = -step; km.dFy = -step; break;
             case 'o': km.dFx = +step; km.dFy = -step; break;
             case 'n': km.dFx = -step; km.dFy = +step; break;
@@ -76,16 +70,13 @@ int main(int argc, char **argv){
             default: continue;
         }
 
-        // ---- SCRITTURA SULLA PIPE ----
+        // Send message to blackboard
         write(fdItoB, &km, sizeof(km));
 
-        if(km.cmd == 9)
+        if(km.cmd == 9)   // quit
             break;
     }
 
-    // -----------------------------
-    //  EXIT PULITA
-    // -----------------------------
     endwin();
     delscreen(scr);
     fclose(term_in);

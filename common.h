@@ -1,26 +1,24 @@
 #pragma once
 #include <stdint.h>
 
-// structure of the messages sent on the pipe
+// Messages passed through pipes between processes
 
-// input -> blackboard
+// From input → blackboard
 typedef struct{
-    float dFx;      // difference of force applied to the drone in the directions
-    float dFy;
-    int cmd;        // brake, reset, quit
+    float dFx;   // change in force along X
+    float dFy;   // change in force along Y
+    int cmd;     // 1=brake, 2=reset, 9=quit
 } KeyMsg;
 
-// blackboard -> drone
+// From blackboard → drone
 typedef struct{
-    float Fx, Fy;       // resulting force on the drone
-    float M,K,T;        // dynamic parameters 
-    int reset;          // drone reset
+    float Fx, Fy;   // total force applied to drone
+    float M,K,T;    // mass, damping, timestep
+    int reset;      // flag to reset drone state
 } ForceMsg;
 
-// drone -> blackboard 
+// From drone → blackboard
 typedef struct{
-    float x,y;          // position
-    float vx, vy;       // velocity 
+    float x,y;      // drone position
+    float vx, vy;   // drone velocity
 } StateMsg;
-
-
