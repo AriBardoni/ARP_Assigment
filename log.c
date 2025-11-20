@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <linux/time.h>
+//#include <linux/time.h>
 
 // This file implements a very simple logging module.
 // It lets us write timestamped messages to a file,

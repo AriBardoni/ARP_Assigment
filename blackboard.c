@@ -6,38 +6,37 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <time.h>
 #include "common.h"
 
-// Windows used for drawing (map + info)
-static WINDOW *viewWin,*infoWin;
+// main view window
+static WINDOW *viewWin;
 
-// Called when user presses CTRL+C or the process must exit
+// clean exit on CTRL+C
 static void cleanup(int sig){
-    endwin();               // restore terminal from ncurses mode
-    system("stty sane");    // clean terminal state
-    _exit(0);               // force exit
+    (void)sig;
+    endwin();
+    system("stty sane");
+    _exit(0);
 }
 
-// Initialize the two panels: simulation view + info panel
 static void init_ui(){
     int H,W;
     getmaxyx(stdscr,H,W);   // get terminal size
 
-    int info_h=6;           // height of the info panel
-    int view_h=H-info_h;    // rest of the screen is the view
-
-    // create the two windows
-    viewWin=newwin(view_h,W,0,0);
-    infoWin=newwin(info_h,W,view_h,0);
-
-    // draw borders
+    viewWin = newwin(H, W, 0, 0);
     box(viewWin,0,0);
-    box(infoWin,0,0);
-
-    // refresh both
     wrefresh(viewWin);
-    wrefresh(infoWin);
 }
+
+#define N_OBSTACLES 10
+
+typedef struct {
+    float x_ob;   // window coordinate X
+    float y_ob;   // window coordinate Y
+} Obstacle;
+
+Obstacle obs[N_OBSTACLES];
 
 int main(int argc,char **argv){
     if(argc<4){
@@ -45,7 +44,6 @@ int main(int argc,char **argv){
         return 1;
     }
 
-    // pipe descriptors passed via command line
     int fdItoB = atoi(argv[1]);  // input -> blackboard
     int fdBtoD = atoi(argv[2]);  // blackboard -> drone
     int fdDtoB = atoi(argv[3]);  // drone -> blackboard
@@ -53,40 +51,89 @@ int main(int argc,char **argv){
     signal(SIGINT,cleanup);
 
     setlocale(LC_ALL,"");
-    initscr();       // start ncurses
-    noecho();        // do not print typed chars
-    cbreak();        // disable line buffering
+    initscr();
+    noecho();
+    cbreak();
     keypad(stdscr,TRUE);
+    nodelay(stdscr,TRUE);   // getch() non-blocking
 
     init_ui();
 
+    int w = getmaxx(viewWin);
+    int h = getmaxy(viewWin);
+
+    // --- generate static obstacles (window coords) ---
+    srand( (unsigned) time(NULL) );
+    for(int i=0; i<N_OBSTACLES; i++){
+        obs[i].y_ob = rand() % (h-2) + 1;  // inside box
+        obs[i].x_ob = rand() % (w-2) + 1;
+    }
+
     // Forces and physical parameters
-    float Fx=0,Fy=0;   // accumulated force
+    float Fx=0,Fy=0;
     float M=1,K=1,T=0.05;
 
-    // Current drone state received from drone process
+    // Current drone state (world coordinates 0..100)
     StateMsg state={50,50,0,0};
 
     while(1){
 
-        // We prepare for select() to listen on two fds:
-        // - fdItoB : input commands
-        // - fdDtoB : drone state updates
+        // ------------- HANDLE RESIZE (mouse) -------------
+        int ch = getch();
+        if (ch == KEY_RESIZE) {
+
+            int w_old = w;
+            int h_old = h;
+
+            // update ncurses internal size info
+            resize_term(0,0);
+
+            int newH, newW;
+            getmaxyx(stdscr, newH, newW);
+
+            delwin(viewWin);
+            viewWin = newwin(newH, newW, 0, 0);
+
+            w = newW;
+            h = newH;
+
+            box(viewWin,0,0);
+
+            // rescale obstacles proportionally to new size
+            for (int i = 0; i < N_OBSTACLES; i++) {
+
+                float rel_ox = (obs[i].x_ob - 1) / (float)(w_old - 2);
+                float rel_oy = (obs[i].y_ob - 1) / (float)(h_old - 2);
+
+                obs[i].x_ob = 1 + rel_ox * (w - 2);
+                obs[i].y_ob = 1 + rel_oy * (h - 2);
+
+                mvwaddch(viewWin, (int)obs[i].y_ob, (int)obs[i].x_ob, 'O');
+            }
+
+            // il drone NON va riscalato qui.
+            // Verrà ridisegnato con il nuovo w,h più sotto,
+            // usando state.x/state.y (0..100) -> mapping proporzionale automatico.
+
+            wrefresh(viewWin);
+            // dopo il resize, saltiamo al prossimo frame
+            continue;
+        }
+
+        // ------------- SELECT SU PIPE -------------
         fd_set s;
         FD_ZERO(&s);
         FD_SET(fdItoB,&s);
         FD_SET(fdDtoB,&s);
 
         int maxfd = (fdItoB>fdDtoB?fdItoB:fdDtoB);
-
-        // Wait max 20ms for input or drone updates
-        struct timeval tv={0,20000};
+        struct timeval tv={0,20000};  // 20 ms
 
         int rv=select(maxfd+1,&s,NULL,NULL,&tv);
 
         if(rv>0){
 
-            // If input process sent a message
+            // Input process -> blackboard
             if(FD_ISSET(fdItoB,&s)){
                 KeyMsg km;
                 if(read(fdItoB,&km,sizeof(km))>0){
@@ -101,14 +148,13 @@ int main(int argc,char **argv){
                         write(fdBtoD,&fm,sizeof(fm));
                     }
                     else {
-                        // normal movement: accumulate forces
                         Fx+=km.dFx;
                         Fy+=km.dFy;
                     }
                 }
             }
 
-            // If drone sent updated position
+            // Drone -> blackboard (state update)
             if(FD_ISSET(fdDtoB,&s)){
                 StateMsg sm;
                 if(read(fdDtoB,&sm,sizeof(sm))>0)
@@ -116,38 +162,29 @@ int main(int argc,char **argv){
             }
         }
 
-        // Send forces to the drone
+        // ------------- SEND FORCE TO DRONE -------------
         ForceMsg fm={Fx,Fy,M,K,T,0};
         write(fdBtoD,&fm,sizeof(fm));
 
-        // DRAWING SECTION ----------------------
-
+        // ------------- DRAW SECTION -----------------
         werase(viewWin);
         box(viewWin,0,0);
 
-        int w=getmaxx(viewWin);
-        int h=getmaxy(viewWin);
+        // window coords for drone (from world coords 0..100)
+        int cx = (int)((state.x/100.0f)*(w-2));
+        int cy = (int)((state.y/100.0f)*(h-2));
 
-        // Convert world coordinates (0-100) to window coordinates
-        int cx = (int)((state.x/100)*(w-2));
-        int cy = (int)((state.y/100)*(h-2));
+        // draw obstacles
+        for(int i=0; i<N_OBSTACLES; i++){
+            mvwaddch(viewWin, (int)obs[i].y_ob, (int)obs[i].x_ob, 'O');
+        }
 
-        // Draw drone as '+'
-        mvwaddch(viewWin,cy+1,cx+1,'+');
+        // draw drone
+        mvwaddch(viewWin, cy+1, cx+1, '+');
         wrefresh(viewWin);
-
-        // INFO PANEL
-        werase(infoWin);
-        box(infoWin,0,0);
-
-        mvwprintw(infoWin,1,2,"Pos: %.1f %.1f",state.x,state.y);
-        mvwprintw(infoWin,2,2,"Vel: %.2f %.2f",state.vx,state.vy);
-        mvwprintw(infoWin,3,2,"Force: %.2f %.2f",Fx,Fy);
-
-        mvwprintw(infoWin,4,2,"Press q in INPUT tab to quit");
-        wrefresh(infoWin);
     }
 
     cleanup(0);
     return 0;
 }
+
