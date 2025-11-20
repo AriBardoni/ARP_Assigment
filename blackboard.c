@@ -56,6 +56,8 @@ int main(int argc,char **argv){
     cbreak();
     keypad(stdscr,TRUE);
     nodelay(stdscr,TRUE);   // getch() non-blocking
+    curs_set(0);   // hide cursor
+
 
     init_ui();
 
