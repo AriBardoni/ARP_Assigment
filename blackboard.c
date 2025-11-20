@@ -46,9 +46,9 @@ int main(int argc,char **argv){
     }
 
     // pipe descriptors passed via command line
-    int fdItoB = atoi(argv[1]);  // input → blackboard
-    int fdBtoD = atoi(argv[2]);  // blackboard → drone
-    int fdDtoB = atoi(argv[3]);  // drone → blackboard
+    int fdItoB = atoi(argv[1]);  // input -> blackboard
+    int fdBtoD = atoi(argv[2]);  // blackboard -> drone
+    int fdDtoB = atoi(argv[3]);  // drone -> blackboard
 
     signal(SIGINT,cleanup);
 
