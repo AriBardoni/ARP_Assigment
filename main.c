@@ -23,10 +23,6 @@ int main() {
     if(pipe(BtoD) < 0) die("BtoD");
     if(pipe(DtoB) < 0) die("DtoB");
 
-    // =====================================================
-    // ============= DRONE PROCESS =========================
-    // =====================================================
-
     pid_t p = fork();              // create first child (drone)
     if (p < 0) die("fork drone");
 
@@ -54,10 +50,6 @@ int main() {
         die("exec drone");    // only executed if exec fails
     }
 
-
-    // =====================================================
-    // ============= INPUT PROCESS =========================
-    // =====================================================
 
     pid_t p2 = fork();             // create second child (input)
     if (p2 < 0) die("fork input");
@@ -97,11 +89,6 @@ int main() {
         execvp("konsole", argsI);
         die("exec input");
     }
-
-
-    // =====================================================
-    // ============= BLACKBOARD PROCESS ====================
-    // =====================================================
 
     // Parent closes the ends not used by the blackboard
     close(BtoD[0]); // blackboard writes on BtoD[1]
