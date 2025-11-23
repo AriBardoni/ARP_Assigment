@@ -30,13 +30,39 @@ static void init_ui(){
 }
 
 #define N_OBSTACLES 10
+#define N_TARGETS 10
 
 typedef struct {
     float x_ob;   // window coordinate X
     float y_ob;   // window coordinate Y
 } Obstacle;
 
+typedef struct {
+    float x_tar;   // window coordinate X
+    float y_tar;   // window coordinate Y
+} Targets;
+
+// checks for occupied positions 
+int is_occupied(int y, int x,
+                Obstacle obs[], int n_obs,
+                Targets tar[], int n_tar)
+{
+    for (int i = 0; i < n_obs; i++) {
+        if ((int)obs[i].y_ob == y && (int)obs[i].x_ob == x)
+            return 1;
+    }
+
+    for (int i = 0; i < n_tar; i++) {
+        if ((int)tar[i].y_tar == y && (int)tar[i].x_tar == x)
+            return 1;
+    }
+
+    return 0;   //free position 
+}
+
+
 Obstacle obs[N_OBSTACLES];
+Targets tar[N_TARGETS];
 
 int main(int argc,char **argv){
     if(argc<4){
@@ -65,11 +91,32 @@ int main(int argc,char **argv){
     int h = getmaxy(viewWin);
 
     // obstacles 
-    srand( (unsigned) time(NULL) );
-    for(int i=0; i<N_OBSTACLES; i++){
-        obs[i].y_ob = rand() % (h-2) + 1;  
-        obs[i].x_ob = rand() % (w-2) + 1;
+    for (int i = 0; i < N_OBSTACLES; i++) {
+        int y, x;
+        do {
+            y = rand() % (h - 2) + 1;
+            x = rand() % (w - 2) + 1;
+        } while (is_occupied(y, x, obs, i, tar, 0)); 
+        // tar,0 perché ancora non hai inserito target
+
+        obs[i].y_ob = y;
+        obs[i].x_ob = x;
     }
+
+
+    // targets
+    for (int i = 0; i < N_TARGETS; i++) {
+        int y, x;
+        do {
+            y = rand() % (h - 2) + 1;
+            x = rand() % (w - 2) + 1;
+        } while (is_occupied(y, x, obs, N_OBSTACLES, tar, i));
+        // ora tutti gli ostacoli sono validi, e anche i primi i target
+
+        tar[i].y_tar = y;
+        tar[i].x_tar = x;
+    }
+
 
     // Forces and physical parameters
     float Fx=0,Fy=0;
@@ -111,6 +158,18 @@ int main(int argc,char **argv){
                 obs[i].y_ob = 1 + rel_oy * (h - 2);
 
                 mvwaddch(viewWin, (int)obs[i].y_ob, (int)obs[i].x_ob, 'O');
+            }
+
+            // targets proportionally to new size
+            for (int i = 0; i < N_TARGETS; i++) {
+
+                float rel_ox = (tar[i].x_tar - 1) / (float)(w_old - 2);
+                float rel_oy = (tar[i].y_tar - 1) / (float)(h_old - 2);
+
+                tar[i].x_tar = 1 + rel_ox * (w - 2);
+                tar[i].y_tar = 1 + rel_oy * (h - 2);
+
+                mvwaddch(viewWin, (int)tar[i].y_tar, (int)tar[i].x_tar, '*');
             }
 
             wrefresh(viewWin);
@@ -172,6 +231,11 @@ int main(int argc,char **argv){
         // draw obstacles
         for(int i=0; i<N_OBSTACLES; i++){
             mvwaddch(viewWin, (int)obs[i].y_ob, (int)obs[i].x_ob, 'O');
+        }
+
+        // draw targets
+        for (int i = 0; i < N_TARGETS; i++) {
+            mvwaddch(viewWin, (int)tar[i].y_tar, (int)tar[i].x_tar, '*');
         }
 
         // draw drone
