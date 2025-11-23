@@ -55,7 +55,7 @@ int main(int argc,char **argv){
     noecho();
     cbreak();
     keypad(stdscr,TRUE);
-    nodelay(stdscr,TRUE);   // getch() non-blocking
+    nodelay(stdscr,TRUE);   // getch() non-blockin
     curs_set(0);   // hide cursor
 
 
@@ -64,10 +64,10 @@ int main(int argc,char **argv){
     int w = getmaxx(viewWin);
     int h = getmaxy(viewWin);
 
-    // --- generate static obstacles (window coords) ---
+    // obstacles 
     srand( (unsigned) time(NULL) );
     for(int i=0; i<N_OBSTACLES; i++){
-        obs[i].y_ob = rand() % (h-2) + 1;  // inside box
+        obs[i].y_ob = rand() % (h-2) + 1;  
         obs[i].x_ob = rand() % (w-2) + 1;
     }
 
@@ -80,7 +80,7 @@ int main(int argc,char **argv){
 
     while(1){
 
-        // ------------- HANDLE RESIZE (mouse) -------------
+        // resize 
         int ch = getch();
         if (ch == KEY_RESIZE) {
 
@@ -113,16 +113,11 @@ int main(int argc,char **argv){
                 mvwaddch(viewWin, (int)obs[i].y_ob, (int)obs[i].x_ob, 'O');
             }
 
-            // il drone NON va riscalato qui.
-            // Verrà ridisegnato con il nuovo w,h più sotto,
-            // usando state.x/state.y (0..100) -> mapping proporzionale automatico.
-
             wrefresh(viewWin);
-            // dopo il resize, saltiamo al prossimo frame
             continue;
         }
 
-        // ------------- SELECT SU PIPE -------------
+
         fd_set s;
         FD_ZERO(&s);
         FD_SET(fdItoB,&s);
@@ -164,11 +159,9 @@ int main(int argc,char **argv){
             }
         }
 
-        // ------------- SEND FORCE TO DRONE -------------
         ForceMsg fm={Fx,Fy,M,K,T,0};
         write(fdBtoD,&fm,sizeof(fm));
 
-        // ------------- DRAW SECTION -----------------
         werase(viewWin);
         box(viewWin,0,0);
 

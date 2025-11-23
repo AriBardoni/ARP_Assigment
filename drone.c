@@ -37,7 +37,6 @@ int main(int argc,char **argv){
         }
         if(r==0) return 0; // pipe closed → exit
 
-        // ---- DRONE PHYSICS -----
         // acceleration = (Force - damping*velocity) / mass
         float ax=(Fx - K*vx)/M;
         float ay=(Fy - K*vy)/M;
