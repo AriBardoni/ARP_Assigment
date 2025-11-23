@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ncurses.h>
+#include "log.h"
 #include "common.h"
 
 int main(int argc, char **argv){
@@ -12,6 +13,10 @@ int main(int argc, char **argv){
     }
 
     int fdItoB = atoi(argv[1]);  // pipe to blackboard
+    if (!log_init("input.log")) {
+        perror("log_init input");
+        // puoi comunque continuare senza log se vuoi
+    }
 
     // Open /dev/tty to use ncurses in this terminal
     FILE *term_in  = fopen("/dev/tty", "r");
@@ -41,7 +46,7 @@ int main(int argc, char **argv){
     printw("b = brake | r = reset | q = quit\n");
     refresh();
 
-    while(1){
+        while(1){
 
         int c = getch();     // check keyboard
         if(c == ERR) continue;
@@ -70,8 +75,15 @@ int main(int argc, char **argv){
             default: continue;
         }
 
+        // >>> LOG: registra il tasto premuto e il delta forza
+        char buf[64];
+        snprintf(buf, sizeof(buf), "KEY '%c' cmd=%d", c, km.cmd);
+        log_write2(buf, km.dFx, km.dFy);
+        // <<<
+
         // Send message to blackboard
         write(fdItoB, &km, sizeof(km));
+        // fsync(fdItoB);  // puoi TOGLIERLO: su una pipe non serve a nulla
 
         if(km.cmd == 9)   // quit
             break;

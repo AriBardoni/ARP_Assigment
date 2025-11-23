@@ -120,7 +120,7 @@ int main(int argc,char **argv){
 
     // Forces and physical parameters
     float Fx=0,Fy=0;
-    float M=1,K=1,T=0.05;
+    float M=0.2,K=0.1,T=0.05;
 
     // Current drone state (world coordinates 0..100)
     StateMsg state={50,50,0,0};
