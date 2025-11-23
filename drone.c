@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include "log.h"
 #include "common.h"
 
 int main(int argc,char **argv){
@@ -13,6 +14,11 @@ int main(int argc,char **argv){
 
     // Initial drone state
     float x=50,y=50,vx=0,vy=0;
+
+     if (!log_init("drone.log")) {
+        perror("log_init");
+        // opzionale: puoi continuare anche senza log
+    }
 
     // Force and physics params
     float Fx=0,Fy=0;
@@ -47,6 +53,9 @@ int main(int argc,char **argv){
         x  += vx*T;
         y  += vy*T;
 
+        log_write2("POS", x, y);
+        log_write2("VEL", vx, vy);
+
         // Keep drone in map bounds
         if(x<0)x=0,vx=0;
         if(x>100)x=100,vx=0;
@@ -59,4 +68,6 @@ int main(int argc,char **argv){
 
         usleep((int)(T*1000000)); // wait until next step
     }
+
+    log_close();
 }
