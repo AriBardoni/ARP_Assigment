@@ -65,7 +65,7 @@ Obstacle obs[N_OBSTACLES];
 Targets tar[N_TARGETS];
 
 int main(int argc,char **argv){
-    if(argc<4){
+    if(argc<6){
         fprintf(stderr,"blackboard: missing fds\n");
         return 1;
     }
@@ -73,6 +73,8 @@ int main(int argc,char **argv){
     int fdItoB = atoi(argv[1]);  // input -> blackboard
     int fdBtoD = atoi(argv[2]);  // blackboard -> drone
     int fdDtoB = atoi(argv[3]);  // drone -> blackboard
+    int fdOtoB = atoi(argv[4]);  // obstacles -> blackboard 
+    int fdTtoB = atoi(argv[5]);  // targets -> blackboard 
 
     signal(SIGINT,cleanup);
 
@@ -181,8 +183,17 @@ int main(int argc,char **argv){
         FD_ZERO(&s);
         FD_SET(fdItoB,&s);
         FD_SET(fdDtoB,&s);
+        FD_SET(fdOtoB,&s);
+        FD_SET(fdTtoB,&s);
 
-        int maxfd = (fdItoB>fdDtoB?fdItoB:fdDtoB);
+        int maxfd = fdItoB;
+        if(fdBtoD > maxfd) maxfd = fdBtoD;
+        if(fdDtoB > maxfd) maxfd = fdDtoB;
+        if(fdOtoB > maxfd) maxfd = fdOtoB;
+        if(fdTtoB > maxfd) maxfd = fdTtoB;
+
+
+        //int maxfd = (fdItoB>fdDtoB?fdItoB:fdDtoB);
         struct timeval tv={0,20000};  // 20 ms
 
         int rv=select(maxfd+1,&s,NULL,NULL,&tv);
@@ -216,6 +227,31 @@ int main(int argc,char **argv){
                 if(read(fdDtoB,&sm,sizeof(sm))>0)
                     state=sm;
             }
+
+            if(FD_ISSET(fdOtoB, &s)){
+                ObjMsg om;
+                if(read(fdOtoB, &om, sizeof(om)) > 0){
+                    int y = (int)((om.y/100.0f)*(h-2));
+                    int x = (int)((om.x/100.0f)*(w-2));
+                    if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS)){
+                        obs[om.id].y_ob = y;
+                        obs[om.id].x_ob = x;
+                    }
+                }
+            }
+
+            if(FD_ISSET(fdTtoB, &s)){
+                ObjMsg om;
+                if(read(fdTtoB, &om, sizeof(om)) > 0){
+                    int y = (int)((om.y/100.0f)*(h-2));
+                    int x = (int)((om.x/100.0f)*(w-2));
+                    if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS)){
+                        tar[om.id].y_tar = y;
+                        tar[om.id].x_tar = x;
+                    }
+                }
+            }
+
         }
 
         ForceMsg fm={Fx,Fy,M,K,T,0};
@@ -246,4 +282,5 @@ int main(int argc,char **argv){
     cleanup(0);
     return 0;
 }
+
 

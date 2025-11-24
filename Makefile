@@ -2,7 +2,7 @@ CC      = gcc
 CFLAGS  = -Wall -Wextra -std=c11 -g -D_GNU_SOURCE
 LDLIBS_COMMON   = -lm
 LDLIBS_NCURSES  = -lncursesw
-TARGETS = main drone input blackboard
+TARGETS = main drone input blackboard obstacles targets
 
 all: $(TARGETS)
 
@@ -23,6 +23,13 @@ input: input.o log.o
 
 blackboard: blackboard.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS_COMMON) $(LDLIBS_NCURSES)
+
+obstacles: obstacles.o log.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS_COMMON)
+
+targets: targets.o log.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS_COMMON)
+
 
 # ---- Utility ----
 
