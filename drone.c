@@ -23,8 +23,8 @@ int main(int argc,char **argv){
     // Force and physics params
     float Fx=0,Fy=0;
     float M=1;
-    float K=0.4f;      // damping
-    float T=0.02f;     // update at 50Hz
+    float K=1.0f;      // damping
+    float T=0.1f;     // update at 50Hz
 
     while(1){
         ForceMsg fm;
@@ -66,7 +66,7 @@ int main(int argc,char **argv){
         StateMsg sm={x,y,vx,vy};
         write(fdDtoB,&sm,sizeof(sm));
 
-        usleep((int)(T*1000000)); // wait until next step
+        usleep((int)(T*100000)); // wait until next step
     }
 
     log_close();

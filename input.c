@@ -52,7 +52,7 @@ int main(int argc, char **argv){
         if(c == ERR) continue;
 
         KeyMsg km = (KeyMsg){0,0,0};
-        float step = 1.0f;   // force increment
+        int step = 1;   // force increment
 
         // Map keys to force increments
         switch(c){
