@@ -10,8 +10,11 @@ static void die(const char *msg){ perror(msg); _exit(1); }
 int main() {
 
     // Absolute path of the project folder (needed so child processes can exec files)
-    const char *PATH = "/mnt/c/Users/Ary/Desktop/Robotics/ARP/Assigment1/ARP_Assigment";
-
+    char PATH[1024];
+    if (getcwd(PATH, sizeof(PATH)) == NULL) {
+        perror("getcwd");
+        exit(1);
+    }
     // Pipes:
     // ItoB = input → blackboard
     // BtoD = blackboard → drone
@@ -47,7 +50,7 @@ int main() {
         snprintf(fdBtoD_r,16,"%d",BtoD[0]);
         snprintf(fdDtoB_w,16,"%d",DtoB[1]);
 
-        char dronePath[512];
+        char dronePath[1024];
         snprintf(dronePath, sizeof(dronePath), "%s/drone", PATH);
 
         execlp(dronePath, "drone", fdBtoD_r, fdDtoB_w, NULL);
@@ -77,10 +80,10 @@ int main() {
         char fdItoB_w[16];
         snprintf(fdItoB_w, 16, "%d", ItoB[1]);
 
-        char inputPath[512];
-        snprintf(inputPath, sizeof(inputPath), "%s/input", PATH);
+        char inputPath[1024];
+        snprintf(inputPath, sizeof(inputPath), "%s/input", PATH);    
 
-        char *argsI[] = { "konsole", "-e", inputPath, fdItoB_w, NULL };
+        char *argsI[] = { "konsole","--workdir", PATH,"-e", "./input", fdItoB_w, NULL };
         execvp("konsole", argsI);
         die("exec input");
     }
@@ -100,7 +103,7 @@ int main() {
         char fdOtoB_w[16];
         snprintf(fdOtoB_w, 16, "%d", OtoB[1]);
 
-        char obstaclesPath[512];
+        char obstaclesPath[1024];
         snprintf(obstaclesPath, sizeof(obstaclesPath), "%s/obstacles", PATH);
 
         execlp(obstaclesPath, "obstacles", fdOtoB_w, NULL);
@@ -122,7 +125,7 @@ int main() {
         char fdTtoB_w[16];
         snprintf(fdTtoB_w, 16, "%d", TtoB[1]);
 
-        char targetsPath[512];
+        char targetsPath[1024];
         snprintf(targetsPath, sizeof(targetsPath), "%s/targets", PATH);
 
         execlp(targetsPath, "targets", fdTtoB_w, NULL);
@@ -150,12 +153,13 @@ int main() {
         snprintf(fdOtoB_r,16,"%d",OtoB[0]);
         snprintf(fdTtoB_r,16,"%d",TtoB[0]);
 
-        char blackPath[512];
+        char blackPath[1024];
         snprintf(blackPath, sizeof(blackPath), "%s/blackboard", PATH);
 
         char *argsB[] = {
             "konsole",
-            "-e",
+            "--workdir", PATH,
+            "-e", "./blackboard",
             blackPath,
             fdItoB_r,
             fdBtoD_w,
