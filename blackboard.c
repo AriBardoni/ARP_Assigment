@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <time.h>
+#include <math.h>
 #include "common.h"
 
 // main view window
@@ -30,7 +31,7 @@ static void init_ui(){
 }
 
 #define N_OBSTACLES 10
-#define N_TARGETS 10
+#define N_TARGETS   10
 
 typedef struct {
     float x_ob;   // window coordinate X
@@ -57,12 +58,100 @@ int is_occupied(int y, int x,
             return 1;
     }
 
-    return 0;   //free position 
+    return 0;   // free position 
 }
 
-
 Obstacle obs[N_OBSTACLES];
-Targets tar[N_TARGETS];
+Targets  tar[N_TARGETS];
+
+/// ------------------------------------------------------------------
+///  REPULSIVE FORCE (Latombe/Khatib) + 8-DIRECTION "VIRTUAL KEY"
+/// ------------------------------------------------------------------
+
+static void compute_repulsive_force(const StateMsg *state,
+                                    Obstacle obs[], int n_obs,
+                                    int w, int h,
+                                    float *Frx, float *Fry)
+{
+    // Parametri del potenziale
+    const float RHO  = 5.0f;      // raggio di influenza (world coords 0..100)
+    const float ETA  = 2.0f;      // intensità campo repulsivo
+    const float STEP = 1.5f;      // modulo del "tasto virtuale"
+
+    float Px = 0.0f;
+    float Py = 0.0f;
+
+    if (w <= 2 || h <= 2) {
+        *Frx = *Fry = 0.0f;
+        return;
+    }
+
+    // 1) Calcolo P = somma delle forze repulsive continue (Latombe/Khatib)
+    for (int i = 0; i < n_obs; i++) {
+
+        // finestra [1..w-2] -> mondo [0..100]
+        float ox = (obs[i].x_ob - 1.0f) * 100.0f / (float)(w - 2);
+        float oy = (obs[i].y_ob - 1.0f) * 100.0f / (float)(h - 2);
+
+        float dx = state->x - ox;   // vettore D - O
+        float dy = state->y - oy;
+        float dist = sqrtf(dx*dx + dy*dy);
+
+        if (dist < 1e-3f || dist > RHO)
+            continue;               // troppo lontano o coincidente
+
+        float ex = dx / dist;
+        float ey = dy / dist;
+
+        // F = η (1/d - 1/ρ) (1/d^2) * versore
+        float coeff = ETA * (1.0f/dist - 1.0f/RHO) / (dist*dist);
+
+        Px += coeff * ex;
+        Py += coeff * ey;
+    }
+
+    // Se P è praticamente nullo, nessuna correzione
+    float Pnorm = sqrtf(Px*Px + Py*Py);
+    if (Pnorm < 1e-4f) {
+        *Frx = *Fry = 0.0f;
+        return;
+    }
+
+    // 2) Proiezione su 8 direzioni discrete (come nella slide)
+
+    const float s = 1.0f / sqrtf(2.0f);
+
+    // rr, ll, uu, dd, ur, dr, ul, dl
+    const float dirs[8][2] = {
+        {  1.0f,  0.0f },   // rr
+        { -1.0f,  0.0f },   // ll
+        {  0.0f, -1.0f },   // uu
+        {  0.0f,  1.0f },   // dd
+        {  s,   -s   },     // ur
+        {  s,    s   },     // dr
+        { -s,   -s   },     // ul
+        { -s,    s   }      // dl
+    };
+
+    int best_i = -1;
+    float best_dot = 0.0f;         // vogliamo il MASSIMO dot product positivo
+
+    for (int i = 0; i < 8; i++) {
+        float dot = Px * dirs[i][0] + Py * dirs[i][1];
+        if (dot > best_dot) {      // solo valori positivi
+            best_dot = dot;
+            best_i = i;
+        }
+    }
+
+    if (best_i >= 0) {
+        // 3) "Virtual key": stessa direzione del versore, modulo fisso STEP
+        *Frx = dirs[best_i][0] * STEP;
+        *Fry = dirs[best_i][1] * STEP;
+    } else {
+        *Frx = *Fry = 0.0f;
+    }
+}
 
 int main(int argc,char **argv){
     if(argc<6){
@@ -83,9 +172,8 @@ int main(int argc,char **argv){
     noecho();
     cbreak();
     keypad(stdscr,TRUE);
-    nodelay(stdscr,TRUE);   // getch() non-blockin
-    curs_set(0);   // hide cursor
-
+    nodelay(stdscr,TRUE);   // getch() non-blocking
+    curs_set(0);            // hide cursor
 
     init_ui();
 
@@ -99,12 +187,10 @@ int main(int argc,char **argv){
             y = rand() % (h - 2) + 1;
             x = rand() % (w - 2) + 1;
         } while (is_occupied(y, x, obs, i, tar, 0)); 
-        // tar,0 perché ancora non hai inserito target
 
         obs[i].y_ob = y;
         obs[i].x_ob = x;
     }
-
 
     // targets
     for (int i = 0; i < N_TARGETS; i++) {
@@ -113,16 +199,14 @@ int main(int argc,char **argv){
             y = rand() % (h - 2) + 1;
             x = rand() % (w - 2) + 1;
         } while (is_occupied(y, x, obs, N_OBSTACLES, tar, i));
-        // ora tutti gli ostacoli sono validi, e anche i primi i target
 
         tar[i].y_tar = y;
         tar[i].x_tar = x;
     }
 
-
     // Forces and physical parameters
     float Fx=0,Fy=0;
-    float M=0.2,K=0.1,T=0.05;
+    float M=0.2f,K=0.1f,T=0.05f;
 
     // Current drone state (world coordinates 0..100)
     StateMsg state={50,50,0,0};
@@ -136,7 +220,6 @@ int main(int argc,char **argv){
             int w_old = w;
             int h_old = h;
 
-            // update ncurses internal size info
             resize_term(0,0);
 
             int newH, newW;
@@ -178,7 +261,6 @@ int main(int argc,char **argv){
             continue;
         }
 
-
         fd_set s;
         FD_ZERO(&s);
         FD_SET(fdItoB,&s);
@@ -192,8 +274,6 @@ int main(int argc,char **argv){
         if(fdOtoB > maxfd) maxfd = fdOtoB;
         if(fdTtoB > maxfd) maxfd = fdTtoB;
 
-
-        //int maxfd = (fdItoB>fdDtoB?fdItoB:fdDtoB);
         struct timeval tv={0,20000};  // 20 ms
 
         int rv=select(maxfd+1,&s,NULL,NULL,&tv);
@@ -211,8 +291,8 @@ int main(int argc,char **argv){
                     }
                     else if(km.cmd==2){        // reset
                         Fx=Fy=0;
-                        ForceMsg fm={0,0,M,K,T,1};
-                        write(fdBtoD,&fm,sizeof(fm));
+                        ForceMsg freset={0,0,M,K,T,1};
+                        write(fdBtoD,&freset,sizeof(freset));
                     }
                     else {
                         Fx+=km.dFx;
@@ -254,7 +334,11 @@ int main(int argc,char **argv){
 
         }
 
-        ForceMsg fm={Fx,Fy,M,K,T,0};
+        // ---- calcolo forza repulsiva + somma con input ----
+        float Frx = 0.0f, Fry = 0.0f;
+        compute_repulsive_force(&state, obs, N_OBSTACLES, w, h, &Frx, &Fry);
+
+        ForceMsg fm = { Fx + Frx, Fy + Fry, M, K, T, 0 };
         write(fdBtoD,&fm,sizeof(fm));
 
         werase(viewWin);
@@ -282,5 +366,3 @@ int main(int argc,char **argv){
     cleanup(0);
     return 0;
 }
-
-
