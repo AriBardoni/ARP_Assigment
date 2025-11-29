@@ -9,12 +9,13 @@ static void die(const char *msg){ perror(msg); _exit(1); }
 
 int main() {
 
-    // Absolute path of the project folder (needed so child processes can exec files)
+    // Use current working directory as project path
     char PATH[1024];
     if (getcwd(PATH, sizeof(PATH)) == NULL) {
         perror("getcwd");
         exit(1);
     }
+
     // Pipes:
     // ItoB = input → blackboard
     // BtoD = blackboard → drone
@@ -30,7 +31,8 @@ int main() {
     if(pipe(OtoB) < 0) die("OtoB");
     if(pipe(TtoB) < 0) die("TtoB");
 
-    //DRONE 
+    /* ---------------------------------------------------- */
+    /* ---------------------- DRONE ------------------------ */
     pid_t p = fork();
     if (p < 0) die("fork drone");
 
@@ -57,7 +59,8 @@ int main() {
         die("exec drone");
     }
 
-    //INPUT 
+    /* ---------------------------------------------------- */
+    /* ---------------------- INPUT ------------------------ */
     pid_t p2 = fork();
     if (p2 < 0) die("fork input");
 
@@ -83,12 +86,18 @@ int main() {
         char inputPath[1024];
         snprintf(inputPath, sizeof(inputPath), "%s/input", PATH);    
 
-        char *argsI[] = { "konsole","--workdir", PATH,"-e", "./input", fdItoB_w, NULL };
+        char *argsI[] = {
+            "konsole",
+            "--workdir", PATH,
+            "-e", "./input", fdItoB_w,
+            NULL
+        };
         execvp("konsole", argsI);
         die("exec input");
     }
 
-    //OBSTACLES 
+    /* ---------------------------------------------------- */
+    /* -------------------- OBSTACLES ---------------------- */
     pid_t po = fork();
     if(po < 0) die("fork obstacles");
     if(po == 0){
@@ -110,7 +119,8 @@ int main() {
         die("exec obstacles");
     }
 
-    //TARGETS 
+    /* ---------------------------------------------------- */
+    /* --------------------- TARGETS ----------------------- */
     pid_t pt = fork();
     if(pt < 0) die("fork targets");
     if(pt == 0){
@@ -132,7 +142,8 @@ int main() {
         die("exec targets");
     }
 
-    //BLACKBOARD 
+    /* ---------------------------------------------------- */
+    /* -------------------- BLACKBOARD --------------------- */
     // Parent closes ends not used by the blackboard
     close(BtoD[0]); // blackboard writes on BtoD[1]
     close(DtoB[1]); // blackboard reads on DtoB[0]
@@ -158,8 +169,7 @@ int main() {
 
         char *argsB[] = {
             "konsole",
-            "--workdir", PATH,
-            "-e", "./blackboard",
+            "-e",
             blackPath,
             fdItoB_r,
             fdBtoD_w,

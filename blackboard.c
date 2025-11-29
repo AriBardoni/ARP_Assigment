@@ -24,7 +24,6 @@ static void cleanup(int sig){
 static void init_ui(){
     int H,W;
     getmaxyx(stdscr,H,W);   // get terminal size
-
     viewWin = newwin(H, W, 0, 0);
     box(viewWin,0,0);
     wrefresh(viewWin);
@@ -64,15 +63,17 @@ int is_occupied(int y, int x,
 Obstacle obs[N_OBSTACLES];
 Targets  tar[N_TARGETS];
 
+// --------------------------------------------------
+// Forze repulsive dagli ostacoli (rafforzate) + blocco ai bordi
+// --------------------------------------------------
 static void compute_repulsive_force(const StateMsg *state,
                                     Obstacle obs[], int n_obs,
                                     int w, int h,
                                     float *Frx, float *Fry)
 {
-    // Parametri del potenziale
-    const float RHO  = 5.0f;      // raggio di influenza (world coords 0..100)
-    const float ETA  = 2.0f;      // intensità campo repulsivo
-    const float STEP = 1.5f;      // modulo del "tasto virtuale"
+    const float RHO  = 8.0f;      // raggio di influenza (world coords 0..100)
+    const float ETA  = 6.0f;      // intensità campo repulsivo
+    const float STEP = 2.5f;      // modulo del "tasto virtuale"
 
     float Px = 0.0f;
     float Py = 0.0f;
@@ -82,28 +83,23 @@ static void compute_repulsive_force(const StateMsg *state,
         return;
     }
 
-    // 1) Calcolo P = somma delle forze repulsive continue (Latombe/Khatib)
+    // 1) Calcolo P = somma delle forze repulsive continue
     for (int i = 0; i < n_obs; i++) {
 
         // finestra [1..w-2] -> mondo [0..100]
         float ox = (obs[i].x_ob - 1.0f) * 100.0f / (float)(w - 2);
         float oy = (obs[i].y_ob - 1.0f) * 100.0f / (float)(h - 2);
 
-        float dx = state->x - ox;   // vettore D - O
+        float dx = state->x - ox;
         float dy = state->y - oy;
         float dist = sqrtf(dx*dx + dy*dy);
+        if (dist < 1.0f) dist = 1.0f;
+        if (dist > RHO) continue;
 
-        if (dist < 1e-3f || dist > RHO)
-            continue;               // troppo lontano o coincidente
-
-        float ex = dx / dist;
-        float ey = dy / dist;
-
-        // F = η (1/d - 1/ρ) (1/d^2) * versore
-        float coeff = ETA * (1.0f/dist - 1.0f/RHO) / (dist*dist);
-
-        Px += coeff * ex;
-        Py += coeff * ey;
+        // Forza più “ripida” vicino all’ostacolo
+        float coeff = ETA * powf((1.0f/dist - 1.0f/RHO), 2.0f);
+        Px += coeff * (dx / dist);
+        Py += coeff * (dy / dist);
     }
 
     // Se P è praticamente nullo, nessuna correzione
@@ -114,10 +110,7 @@ static void compute_repulsive_force(const StateMsg *state,
     }
 
     // 2) Proiezione su 8 direzioni discrete (come nella slide)
-
     const float s = 1.0f / sqrtf(2.0f);
-
-    // rr, ll, uu, dd, ur, dr, ul, dl
     const float dirs[8][2] = {
         {  1.0f,  0.0f },   // rr
         { -1.0f,  0.0f },   // ll
@@ -130,24 +123,25 @@ static void compute_repulsive_force(const StateMsg *state,
     };
 
     int best_i = -1;
-    float best_dot = 0.0f;         // vogliamo il MASSIMO dot product positivo
+    float best_dot = 0.0f;
 
     for (int i = 0; i < 8; i++) {
         float dot = Px * dirs[i][0] + Py * dirs[i][1];
-        if (dot > best_dot) {      // solo valori positivi
+        if (dot > best_dot) {
             best_dot = dot;
             best_i = i;
         }
     }
 
     if (best_i >= 0) {
-        // 3) "Virtual key": stessa direzione del versore, modulo fisso STEP
         *Frx = dirs[best_i][0] * STEP;
         *Fry = dirs[best_i][1] * STEP;
     } else {
         *Frx = *Fry = 0.0f;
     }
 }
+
+// --------------------------------------------------
 
 int main(int argc,char **argv){
     if(argc<6){
@@ -168,15 +162,15 @@ int main(int argc,char **argv){
     noecho();
     cbreak();
     keypad(stdscr,TRUE);
-    nodelay(stdscr,TRUE);   // getch() non-blocking
-    curs_set(0);            // hide cursor
+    nodelay(stdscr,TRUE);
+    curs_set(0);
 
     init_ui();
 
     int w = getmaxx(viewWin);
     int h = getmaxy(viewWin);
 
-    // obstacles 
+    // ---- Inizializzazione ostacoli ----
     for (int i = 0; i < N_OBSTACLES; i++) {
         int y, x;
         do {
@@ -188,7 +182,7 @@ int main(int argc,char **argv){
         obs[i].x_ob = x;
     }
 
-    // targets
+    // ---- Inizializzazione target ----
     for (int i = 0; i < N_TARGETS; i++) {
         int y, x;
         do {
@@ -200,59 +194,20 @@ int main(int argc,char **argv){
         tar[i].x_tar = x;
     }
 
-    // Forces and physical parameters
     float Fx=0,Fy=0;
     float M=0.2f,K=0.1f,T=0.05f;
 
-    // Current drone state (world coordinates 0..100)
     StateMsg state={50,50,0,0};
 
     while(1){
-
-        // resize 
         int ch = getch();
         if (ch == KEY_RESIZE) {
-
-            int w_old = w;
-            int h_old = h;
-
+            int w_old=w,h_old=h;
             resize_term(0,0);
-
-            int newH, newW;
-            getmaxyx(stdscr, newH, newW);
-
+            getmaxyx(stdscr,h,w);
             delwin(viewWin);
-            viewWin = newwin(newH, newW, 0, 0);
-
-            w = newW;
-            h = newH;
-
+            viewWin=newwin(h,w,0,0);
             box(viewWin,0,0);
-
-            // rescale obstacles proportionally to new size
-            for (int i = 0; i < N_OBSTACLES; i++) {
-
-                float rel_ox = (obs[i].x_ob - 1) / (float)(w_old - 2);
-                float rel_oy = (obs[i].y_ob - 1) / (float)(h_old - 2);
-
-                obs[i].x_ob = 1 + rel_ox * (w - 2);
-                obs[i].y_ob = 1 + rel_oy * (h - 2);
-
-                mvwaddch(viewWin, (int)obs[i].y_ob, (int)obs[i].x_ob, 'O');
-            }
-
-            // targets proportionally to new size
-            for (int i = 0; i < N_TARGETS; i++) {
-
-                float rel_ox = (tar[i].x_tar - 1) / (float)(w_old - 2);
-                float rel_oy = (tar[i].y_tar - 1) / (float)(h_old - 2);
-
-                tar[i].x_tar = 1 + rel_ox * (w - 2);
-                tar[i].y_tar = 1 + rel_oy * (h - 2);
-
-                mvwaddch(viewWin, (int)tar[i].y_tar, (int)tar[i].x_tar, '*');
-            }
-
             wrefresh(viewWin);
             continue;
         }
@@ -265,97 +220,99 @@ int main(int argc,char **argv){
         FD_SET(fdTtoB,&s);
 
         int maxfd = fdItoB;
-        if(fdBtoD > maxfd) maxfd = fdBtoD;
-        if(fdDtoB > maxfd) maxfd = fdDtoB;
-        if(fdOtoB > maxfd) maxfd = fdOtoB;
-        if(fdTtoB > maxfd) maxfd = fdTtoB;
+        if(fdBtoD>maxfd) maxfd=fdBtoD;
+        if(fdDtoB>maxfd) maxfd=fdDtoB;
+        if(fdOtoB>maxfd) maxfd=fdOtoB;
+        if(fdTtoB>maxfd) maxfd=fdTtoB;
 
-        struct timeval tv={0,20000};  // 20 ms
-
+        struct timeval tv={0,20000};
         int rv=select(maxfd+1,&s,NULL,NULL,&tv);
 
         if(rv>0){
-
-            // Input process -> blackboard
+            // ---- INPUT ----
             if(FD_ISSET(fdItoB,&s)){
                 KeyMsg km;
                 if(read(fdItoB,&km,sizeof(km))>0){
-
-                    if(km.cmd==9) break;       // quit
-                    else if(km.cmd==1) {       // brake
-                        Fx=Fy=0;
+                    if(km.cmd==9) break;
+                    else if(km.cmd==1){ 
+                        Fx=Fy=0; 
                     }
-                    else if(km.cmd==2){        // reset
+                    else if(km.cmd==2){
                         Fx=Fy=0;
-                        ForceMsg freset={0,0,M,K,T,1};
-                        write(fdBtoD,&freset,sizeof(freset));
-                    }
-                    else {
+                        ForceMsg reset={0,0,M,K,T,1};
+                        write(fdBtoD,&reset,sizeof(reset));
+                    } else {
                         Fx+=km.dFx;
                         Fy+=km.dFy;
                     }
                 }
             }
 
-            // Drone -> blackboard (state update)
+            // ---- STATO DRONE ----
             if(FD_ISSET(fdDtoB,&s)){
                 StateMsg sm;
                 if(read(fdDtoB,&sm,sizeof(sm))>0)
                     state=sm;
             }
 
-            if(FD_ISSET(fdOtoB, &s)){
+            // ---- OSTACOLI ----
+            if(FD_ISSET(fdOtoB,&s)){
                 ObjMsg om;
-                if(read(fdOtoB, &om, sizeof(om)) > 0){
-                    int y = (int)((om.y/100.0f)*(h-2));
-                    int x = (int)((om.x/100.0f)*(w-2));
+                if(read(fdOtoB,&om,sizeof(om))>0){
+                    int y=(int)((om.y/100.0f)*(h-2));
+                    int x=(int)((om.x/100.0f)*(w-2));
                     if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS)){
-                        obs[om.id].y_ob = y;
-                        obs[om.id].x_ob = x;
+                        obs[om.id].y_ob=y;
+                        obs[om.id].x_ob=x;
                     }
                 }
             }
 
-            if(FD_ISSET(fdTtoB, &s)){
+            // ---- TARGETS ----
+            if(FD_ISSET(fdTtoB,&s)){
                 ObjMsg om;
-                if(read(fdTtoB, &om, sizeof(om)) > 0){
-                    int y = (int)((om.y/100.0f)*(h-2));
-                    int x = (int)((om.x/100.0f)*(w-2));
+                if(read(fdTtoB,&om,sizeof(om))>0){
+                    int y=(int)((om.y/100.0f)*(h-2));
+                    int x=(int)((om.x/100.0f)*(w-2));
                     if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS)){
-                        tar[om.id].y_tar = y;
-                        tar[om.id].x_tar = x;
+                        tar[om.id].y_tar=y;
+                        tar[om.id].x_tar=x;
                     }
                 }
             }
-
         }
 
-        // ---- calcolo forza repulsiva + somma con input ----
-        float Frx = 0.0f, Fry = 0.0f;
+        // ---- Calcolo forze totali ----
+        float Frx=0,Fry=0;
         compute_repulsive_force(&state, obs, N_OBSTACLES, w, h, &Frx, &Fry);
 
-        ForceMsg fm = { Fx + Frx, Fy + Fry, M, K, T, 0 };
+        float totalFx = Fx + Frx;
+        float totalFy = Fy + Fry;
+
+        // --- Fermati vicino ai bordi ---
+        const float MARGIN = 5.0f;
+        if(state.x < MARGIN && totalFx < 0.0f)  totalFx = 0.0f;
+        if(state.x > 100.0f - MARGIN && totalFx > 0.0f) totalFx = 0.0f;
+        if(state.y < MARGIN && totalFy < 0.0f)  totalFy = 0.0f;
+        if(state.y > 100.0f - MARGIN && totalFy > 0.0f) totalFy = 0.0f;
+
+        ForceMsg fm={totalFx, totalFy, M,K,T,0};
         write(fdBtoD,&fm,sizeof(fm));
 
+        // ---- Rendering ----
         werase(viewWin);
         box(viewWin,0,0);
 
-        // window coords for drone (from world coords 0..100)
-        int cx = (int)((state.x/100.0f)*(w-2));
-        int cy = (int)((state.y/100.0f)*(h-2));
+        int cx=(int)((state.x/100.0f)*(w-3));
+        int cy=(int)((state.y/100.0f)*(h-3));
 
-        // draw obstacles
-        for(int i=0; i<N_OBSTACLES; i++){
-            mvwaddch(viewWin, (int)obs[i].y_ob, (int)obs[i].x_ob, 'O');
-        }
+        for(int i=0;i<N_OBSTACLES;i++)
+            mvwaddch(viewWin,(int)obs[i].y_ob,(int)obs[i].x_ob,'O');
 
-        // draw targets
-        for (int i = 0; i < N_TARGETS; i++) {
-            mvwaddch(viewWin, (int)tar[i].y_tar, (int)tar[i].x_tar, '*');
-        }
+        for(int i=0;i<N_TARGETS;i++)
+            mvwaddch(viewWin,(int)tar[i].y_tar,(int)tar[i].x_tar,'*');
 
-        // draw drone
-        mvwaddch(viewWin, cy+1, cx+1, '+');
+        mvwaddch(viewWin,cy+1,cx+1,'+');
         wrefresh(viewWin);
     }
 
