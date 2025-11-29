@@ -64,10 +64,6 @@ int is_occupied(int y, int x,
 Obstacle obs[N_OBSTACLES];
 Targets  tar[N_TARGETS];
 
-/// ------------------------------------------------------------------
-///  REPULSIVE FORCE (Latombe/Khatib) + 8-DIRECTION "VIRTUAL KEY"
-/// ------------------------------------------------------------------
-
 static void compute_repulsive_force(const StateMsg *state,
                                     Obstacle obs[], int n_obs,
                                     int w, int h,
