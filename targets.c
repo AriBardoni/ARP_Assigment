@@ -5,33 +5,34 @@
 #include "common.h"
 
 #define N_TARGETS 10
+#define W 100
+#define H 100
 
 int main(int argc, char **argv){
     if(argc < 2){
-        fprintf(stderr,"obstacles: missing fd\n");
+        fprintf(stderr,"targets: missing fd\n");
         return 1;
     }
 
-    int fdOtoB = atoi(argv[1]);   // pipe to blackboard 
+    int fdTtoB = atoi(argv[1]);
     srand(time(NULL) ^ getpid());
 
-    int w = 100, h = 100; 
-    ObjMsg msg = {.type = 'T'};
+    ObjMsg msg;
+    msg.type = 'T';
 
     for(int i = 0; i < N_TARGETS; i++){
-        int valid = 0;
-        while(!valid){
-            msg.x = rand() % w;
-            msg.y = rand() % h;
-            msg.id = i;
-            write(fdOtoB, &msg, sizeof(msg));
-            valid = 1;
-        }
+        msg.id = i;            // id 0..9
+        msg.x = rand() % W;    // world coord
+        msg.y = rand() % H;
+
+        write(fdTtoB, &msg, sizeof(msg));
         usleep(10000);
     }
 
+    // static targets
     while(1){
-        // for static obstacles 
         usleep(500000);
     }
+
+    return 0;
 }

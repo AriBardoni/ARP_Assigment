@@ -31,6 +31,8 @@ static void init_ui(){
 
 #define N_OBSTACLES 10
 #define N_TARGETS   10
+#define DIF 10
+#define MARGIN 5
 
 typedef struct {
     float x_ob;   // window coordinate X
@@ -42,10 +44,26 @@ typedef struct {
     float y_tar;   // window coordinate Y
 } Targets;
 
+// check that obstacles and targets don't spawn too near to the drone or into the border 
+int check_spawn(int x, int y, int w, int h) {
+    if (x >= 50 - DIF && x <= 50 + DIF && y >= 50 - DIF && y <= 50 + DIF) {
+        return 1;   // too close, not valid 
+    } 
+
+    if (x < MARGIN || x >= w - MARGIN) {
+        return 1; // Invalid: Touches side walls
+    }
+
+    // Check Top Wall OR Bottom Wall
+    if (y < MARGIN  || y >= h - MARGIN) {
+        return 1; // Invalid: Touches top/bottom walls
+    }
+
+    return 0;     
+}
+
 // checks for occupied positions 
-int is_occupied(int y, int x,
-                Obstacle obs[], int n_obs,
-                Targets tar[], int n_tar)
+int is_occupied(int y, int x, Obstacle obs[], int n_obs, Targets tar[], int n_tar)
 {
     for (int i = 0; i < n_obs; i++) {
         if ((int)obs[i].y_ob == y && (int)obs[i].x_ob == x)
@@ -63,10 +81,7 @@ int is_occupied(int y, int x,
 Obstacle obs[N_OBSTACLES];
 Targets  tar[N_TARGETS];
 
-static void compute_repulsive_force(const StateMsg *state,
-                                    Obstacle obs[], int n_obs,
-                                    int w, int h,
-                                    float *Frx, float *Fry)
+static void compute_repulsive_force(const StateMsg *state, Obstacle obs[], int n_obs, int w, int h, float *Frx, float *Fry)
 {
     const float RHO  = 8.0f;      // raggio di influenza (world coords 0..100)
     const float ETA  = 6.0f;      // intensità campo repulsivo
@@ -169,7 +184,7 @@ int main(int argc,char **argv){
         do {
             y = rand() % (h - 2) + 1;
             x = rand() % (w - 2) + 1;
-        } while (is_occupied(y, x, obs, i, tar, 0)); 
+        } while (is_occupied(y, x, obs, i, tar, 0) || check_spawn(x,y,w,h)); 
 
         obs[i].y_ob = y;
         obs[i].x_ob = x;
@@ -181,7 +196,7 @@ int main(int argc,char **argv){
         do {
             y = rand() % (h - 2) + 1;
             x = rand() % (w - 2) + 1;
-        } while (is_occupied(y, x, obs, N_OBSTACLES, tar, i));
+        } while (is_occupied(y, x, obs, N_OBSTACLES, tar, i) || check_spawn(x,y,w,h));
 
         tar[i].y_tar = y;
         tar[i].x_tar = x;
@@ -195,7 +210,6 @@ int main(int argc,char **argv){
     while(1){
         int ch = getch();
         if (ch == KEY_RESIZE) {
-            int w_old=w,h_old=h;
             resize_term(0,0);
             getmaxyx(stdscr,h,w);
             delwin(viewWin);
@@ -252,25 +266,29 @@ int main(int argc,char **argv){
             // obstacles
             if(FD_ISSET(fdOtoB,&s)){
                 ObjMsg om;
-                if(read(fdOtoB,&om,sizeof(om))>0){
+                if (om.id >= 0 && om.id < N_OBSTACLES) {
+                    if(read(fdOtoB,&om,sizeof(om))>0){
                     int y=(int)((om.y/100.0f)*(h-2));
                     int x=(int)((om.x/100.0f)*(w-2));
-                    if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS)){
+                        if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS)){
                         obs[om.id].y_ob=y;
                         obs[om.id].x_ob=x;
+                        }
                     }
-                }
+                 }   
             }
 
             // targets 
             if(FD_ISSET(fdTtoB,&s)){
                 ObjMsg om;
-                if(read(fdTtoB,&om,sizeof(om))>0){
-                    int y=(int)((om.y/100.0f)*(h-2));
-                    int x=(int)((om.x/100.0f)*(w-2));
-                    if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS)){
-                        tar[om.id].y_tar=y;
-                        tar[om.id].x_tar=x;
+                if (om.id >= 0 && om.id < N_TARGETS) {
+                    if(read(fdTtoB,&om,sizeof(om))>0){
+                        int y=(int)((om.y/100.0f)*(h-2));
+                        int x=(int)((om.x/100.0f)*(w-2));
+                        if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS)){
+                            tar[om.id].y_tar=y;
+                            tar[om.id].x_tar=x;
+                        }
                     }
                 }
             }
@@ -348,11 +366,16 @@ int main(int argc,char **argv){
         int cx=(int)((state.x/100.0f)*(w-3));
         int cy=(int)((state.y/100.0f)*(h-3));
 
-        for(int i=0;i<N_OBSTACLES;i++)
-            mvwaddch(viewWin,(int)obs[i].y_ob,(int)obs[i].x_ob,'O');
+        for(int i=0;i<N_OBSTACLES;i++){
+            if (obs[i].x_ob > 0 && obs[i].y_ob > 0)
+                mvwaddch(viewWin,(int)obs[i].y_ob,(int)obs[i].x_ob,'O');
+        }
 
-        for(int i=0;i<N_TARGETS;i++)
-            mvwaddch(viewWin,(int)tar[i].y_tar,(int)tar[i].x_tar,'*');
+        for(int i=0;i<N_TARGETS;i++){
+            if (tar[i].x_tar > 0 && tar[i].y_tar > 0)
+                mvwaddch(viewWin,(int)tar[i].y_tar,(int)tar[i].x_tar,'*');
+        }
+            
 
         mvwaddch(viewWin,cy+1,cx+1,'+');
         wrefresh(viewWin);
@@ -361,3 +384,5 @@ int main(int argc,char **argv){
     cleanup(0);
     return 0;
 }
+
+

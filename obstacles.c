@@ -85,28 +85,27 @@ double calculate_net_force(
     return magnitude(*net_force);
 }
 
+#define W 100
+#define H 100
+
 int main(int argc, char **argv){
     if(argc < 2){
         fprintf(stderr,"obstacles: missing fd\n");
         return 1;
     }
 
-    int fdOtoB = atoi(argv[1]);   // pipe to blackboard 
+    int fdOtoB = atoi(argv[1]);
     srand(time(NULL) ^ getpid());
 
-    int w = 100, h = 100; 
-    ObjMsg msg = {.type = 'O'};
+    ObjMsg msg;
+    msg.type = 'O';
 
     for(int i = 0; i < N_OBS; i++){
-        msg.x = rand() % w;
-        msg.y = rand() % h;
-        msg.id = i+1;
-        write(fdOtoB, &msg.id, sizeof(msg.id));
-        usleep(10000);
-    }
+        msg.id = i;              // id must be 0..9
+        msg.x = rand() % W;      // world coords 0..100
+        msg.y = rand() % H;
 
-    while(1){
-        // for static targets 
-        usleep(500000);
+        write(fdOtoB, &msg, sizeof(msg));
+        usleep(10000);  
     }
 }
