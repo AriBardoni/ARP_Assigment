@@ -80,7 +80,7 @@ static void compute_repulsive_force(const StateMsg *state,
         return;
     }
 
-    // 1) Calcolo P = somma delle forze repulsive continue
+    // compute sum of repulsive forces 
     for (int i = 0; i < n_obs; i++) {
 
         float ox = (obs[i].x_ob - 1.0f) * 100.0f / (float)(w - 2);
@@ -98,7 +98,6 @@ static void compute_repulsive_force(const StateMsg *state,
         Py += coeff * (dy / dist);
     }
 
-    // if P=0 no correction 
     float Pnorm = sqrtf(Px*Px + Py*Py);
     if (Pnorm < 1e-4f) {
         *Frx = *Fry = 0.0f;
@@ -137,7 +136,6 @@ static void compute_repulsive_force(const StateMsg *state,
     }
 }
 
-
 int main(int argc,char **argv){
     if(argc<6){
         fprintf(stderr,"blackboard: missing fds\n");
@@ -165,7 +163,7 @@ int main(int argc,char **argv){
     int w = getmaxx(viewWin);
     int h = getmaxy(viewWin);
 
-    // ---- Inizializzazione ostacoli ----
+    // obstacles initialization
     for (int i = 0; i < N_OBSTACLES; i++) {
         int y, x;
         do {
@@ -177,7 +175,7 @@ int main(int argc,char **argv){
         obs[i].x_ob = x;
     }
 
-    // ---- Inizializzazione target ----
+    // target initialization 
     for (int i = 0; i < N_TARGETS; i++) {
         int y, x;
         do {
@@ -224,7 +222,8 @@ int main(int argc,char **argv){
         int rv=select(maxfd+1,&s,NULL,NULL,&tv);
 
         if(rv>0){
-            // ---- INPUT ----
+
+            // input 
             if(FD_ISSET(fdItoB,&s)){
                 KeyMsg km;
                 if(read(fdItoB,&km,sizeof(km))>0){
@@ -243,14 +242,14 @@ int main(int argc,char **argv){
                 }
             }
 
-            // ---- STATO DRONE ----
+            // drone state 
             if(FD_ISSET(fdDtoB,&s)){
                 StateMsg sm;
                 if(read(fdDtoB,&sm,sizeof(sm))>0)
                     state=sm;
             }
 
-            // ---- OSTACOLI ----
+            // obstacles
             if(FD_ISSET(fdOtoB,&s)){
                 ObjMsg om;
                 if(read(fdOtoB,&om,sizeof(om))>0){
@@ -263,7 +262,7 @@ int main(int argc,char **argv){
                 }
             }
 
-            // ---- TARGETS ----
+            // targets 
             if(FD_ISSET(fdTtoB,&s)){
                 ObjMsg om;
                 if(read(fdTtoB,&om,sizeof(om))>0){
@@ -277,31 +276,68 @@ int main(int argc,char **argv){
             }
         }
 
-        // ---- Calcolo forze totali ----
+        // total forces computed 
         float Frx=0,Fry=0;
         compute_repulsive_force(&state, obs, N_OBSTACLES, w, h, &Frx, &Fry);
 
-        float totalFx = Fx + Frx;
-        float totalFy = Fy + Fry;
+        float WFx = 0.0f;
+        float WFy = 0.0f;
 
-        // --- Fermati vicino ai bordi ---
-        /*const float MARGIN = 5.0f;
-        if(state.x < MARGIN && totalFx < 0.0f)  totalFx = 0.0f;
-        if(state.x > 100.0f - MARGIN && totalFx > 0.0f) totalFx = 0.0f;
-        if(state.y < MARGIN && totalFy < 0.0f)  totalFy = 0.0f;
-        if(state.y > 100.0f - MARGIN && totalFy > 0.0f) totalFy = 0.0f;
-        */
+        const float rho_wall       = 6.0f;   // radius of the field of the wall
+        const float eta_wall       = 5.0f;   // field intensity 
+        const float MAX_REP_WALL   = 2.0f;   // maximum force applied by the wall
 
-        const float MARGIN = 5.0f;
-        // left border
-        if(state.x < MARGIN && totalFx < 0.0f)  totalFx = -totalFx;
-        // right border
-        if(state.x > 100.0f - MARGIN && totalFx > 0.0f) totalFx = -totalFx;
-        // upper border 
-        if(state.y < MARGIN && totalFy < 0.0f)  totalFy = -totalFy;
-        // bottom border 
-        if(state.y > 100.0f - MARGIN && totalFy > 0.0f) totalFy = -totalFy;
+        // LEFT wall 
+        if (state.x < rho_wall) {
+            float d = state.x;
+            if (d < 0.001f) d = 0.001f;
 
+            float term1 = (1.0f / d) - (1.0f / rho_wall);
+            float F = eta_wall * term1 * (1.0f / (d * d));   
+
+            if (F > MAX_REP_WALL) F = MAX_REP_WALL;
+            WFx += F;      
+        }
+
+        // RIGHT wall 
+        if ((100.0f - state.x) < rho_wall) {
+            float d = 100.0f - state.x;
+            if (d < 0.001f) d = 0.001f;
+
+            float term1 = (1.0f / d) - (1.0f / rho_wall);
+            float F = eta_wall * term1 * (1.0f / (d * d));
+
+            if (F > MAX_REP_WALL) F = MAX_REP_WALL;
+            WFx -= F;      
+        }
+
+        // TOP wall
+        if (state.y < rho_wall) {
+            float d = state.y;
+            if (d < 0.001f) d = 0.001f;
+
+            float term1 = (1.0f / d) - (1.0f / rho_wall);
+            float F = eta_wall * term1 * (1.0f / (d * d));
+
+            if (F > MAX_REP_WALL) F = MAX_REP_WALL;
+            WFy += F;     
+        }
+
+        // BOTTOM wall 
+        if ((100.0f - state.y) < rho_wall) {
+            float d = 100.0f - state.y;
+            if (d < 0.001f) d = 0.001f;
+
+            float term1 = (1.0f / d) - (1.0f / rho_wall);
+            float F = eta_wall * term1 * (1.0f / (d * d));
+
+            if (F > MAX_REP_WALL) F = MAX_REP_WALL;
+            WFy -= F;      
+        }
+
+        // total forces applied to the drone
+        float totalFx = Fx + Frx + WFx;
+        float totalFy = Fy + Fry + WFy;
 
         ForceMsg fm={totalFx, totalFy, M,K,T,0};
         write(fdBtoD,&fm,sizeof(fm));
