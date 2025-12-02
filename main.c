@@ -31,8 +31,6 @@ int main() {
     if(pipe(OtoB) < 0) die("OtoB");
     if(pipe(TtoB) < 0) die("TtoB");
 
-    /* ---------------------------------------------------- */
-    /* ---------------------- DRONE ------------------------ */
     pid_t p = fork();
     if (p < 0) die("fork drone");
 
@@ -59,8 +57,6 @@ int main() {
         die("exec drone");
     }
 
-    /* ---------------------------------------------------- */
-    /* ---------------------- INPUT ------------------------ */
     pid_t p2 = fork();
     if (p2 < 0) die("fork input");
 
@@ -96,8 +92,6 @@ int main() {
         die("exec input");
     }
 
-    /* ---------------------------------------------------- */
-    /* -------------------- OBSTACLES ---------------------- */
     pid_t po = fork();
     if(po < 0) die("fork obstacles");
     if(po == 0){
@@ -119,8 +113,6 @@ int main() {
         die("exec obstacles");
     }
 
-    /* ---------------------------------------------------- */
-    /* --------------------- TARGETS ----------------------- */
     pid_t pt = fork();
     if(pt < 0) die("fork targets");
     if(pt == 0){
@@ -142,8 +134,6 @@ int main() {
         die("exec targets");
     }
 
-    /* ---------------------------------------------------- */
-    /* -------------------- BLACKBOARD --------------------- */
     // Parent closes ends not used by the blackboard
     close(BtoD[0]); // blackboard writes on BtoD[1]
     close(DtoB[1]); // blackboard reads on DtoB[0]
@@ -153,7 +143,7 @@ int main() {
     pid_t p3 = fork();
     if (p3 < 0) die("fork blackboard");
 
-    if (p3 == 0) { // child: BLACKBOARD
+    if (p3 == 0) { // child:blackboard 
 
         chdir(PATH);
 

@@ -63,9 +63,6 @@ int is_occupied(int y, int x,
 Obstacle obs[N_OBSTACLES];
 Targets  tar[N_TARGETS];
 
-// --------------------------------------------------
-// Forze repulsive dagli ostacoli (rafforzate) + blocco ai bordi
-// --------------------------------------------------
 static void compute_repulsive_force(const StateMsg *state,
                                     Obstacle obs[], int n_obs,
                                     int w, int h,
@@ -86,7 +83,6 @@ static void compute_repulsive_force(const StateMsg *state,
     // 1) Calcolo P = somma delle forze repulsive continue
     for (int i = 0; i < n_obs; i++) {
 
-        // finestra [1..w-2] -> mondo [0..100]
         float ox = (obs[i].x_ob - 1.0f) * 100.0f / (float)(w - 2);
         float oy = (obs[i].y_ob - 1.0f) * 100.0f / (float)(h - 2);
 
@@ -102,14 +98,14 @@ static void compute_repulsive_force(const StateMsg *state,
         Py += coeff * (dy / dist);
     }
 
-    // Se P è praticamente nullo, nessuna correzione
+    // if P=0 no correction 
     float Pnorm = sqrtf(Px*Px + Py*Py);
     if (Pnorm < 1e-4f) {
         *Frx = *Fry = 0.0f;
         return;
     }
 
-    // 2) Proiezione su 8 direzioni discrete (come nella slide)
+    // projection on the 8 directions 
     const float s = 1.0f / sqrtf(2.0f);
     const float dirs[8][2] = {
         {  1.0f,  0.0f },   // rr
@@ -141,7 +137,6 @@ static void compute_repulsive_force(const StateMsg *state,
     }
 }
 
-// --------------------------------------------------
 
 int main(int argc,char **argv){
     if(argc<6){
@@ -290,16 +285,27 @@ int main(int argc,char **argv){
         float totalFy = Fy + Fry;
 
         // --- Fermati vicino ai bordi ---
-        const float MARGIN = 5.0f;
+        /*const float MARGIN = 5.0f;
         if(state.x < MARGIN && totalFx < 0.0f)  totalFx = 0.0f;
         if(state.x > 100.0f - MARGIN && totalFx > 0.0f) totalFx = 0.0f;
         if(state.y < MARGIN && totalFy < 0.0f)  totalFy = 0.0f;
         if(state.y > 100.0f - MARGIN && totalFy > 0.0f) totalFy = 0.0f;
+        */
+
+        const float MARGIN = 5.0f;
+        // left border
+        if(state.x < MARGIN && totalFx < 0.0f)  totalFx = -totalFx;
+        // right border
+        if(state.x > 100.0f - MARGIN && totalFx > 0.0f) totalFx = -totalFx;
+        // upper border 
+        if(state.y < MARGIN && totalFy < 0.0f)  totalFy = -totalFy;
+        // bottom border 
+        if(state.y > 100.0f - MARGIN && totalFy > 0.0f) totalFy = -totalFy;
+
 
         ForceMsg fm={totalFx, totalFy, M,K,T,0};
         write(fdBtoD,&fm,sizeof(fm));
 
-        // ---- Rendering ----
         werase(viewWin);
         box(viewWin,0,0);
 
