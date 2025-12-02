@@ -81,10 +81,12 @@ int main() {
         snprintf(fdItoB_w, 16, "%d", ItoB[1]);
 
         char inputPath[1024];
-        snprintf(inputPath, sizeof(inputPath), "%s/input", PATH);    
+        snprintf(inputPath, sizeof(inputPath), "%s/input", PATH);
 
-        char *argsI[] = { "konsole","--workdir", PATH,"-e", "./input", fdItoB_w, NULL };
+        char *argsI[] = { "konsole", "--workdir", PATH, "-e", inputPath, fdItoB_w, NULL };
         execvp("konsole", argsI);
+        // If konsole is not available (execvp returns), try to exec the program directly
+        execl(inputPath, inputPath, fdItoB_w, (char *)NULL);
         die("exec input");
     }
 
@@ -159,8 +161,7 @@ int main() {
         char *argsB[] = {
             "konsole",
             "--workdir", PATH,
-            "-e", "./blackboard",
-            blackPath,
+            "-e", blackPath,
             fdItoB_r,
             fdBtoD_w,
             fdDtoB_r,
@@ -169,8 +170,16 @@ int main() {
             NULL
         };
 
-        execvp("konsole", argsB);
-        die("exec blackboard");
+          execvp("konsole", argsB);
+          // Fallback: if konsole isn't present, run the blackboard binary directly
+          execl(blackPath, blackPath,
+              fdItoB_r,
+              fdBtoD_w,
+              fdDtoB_r,
+              fdOtoB_r,
+              fdTtoB_r,
+              (char *)NULL);
+          die("exec blackboard");
     }
 
     return 0; // parent exits
