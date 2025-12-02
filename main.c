@@ -9,12 +9,13 @@ static void die(const char *msg){ perror(msg); _exit(1); }
 
 int main() {
 
-    // Absolute path of the project folder (needed so child processes can exec files)
+    // Use current working directory as project path
     char PATH[1024];
     if (getcwd(PATH, sizeof(PATH)) == NULL) {
         perror("getcwd");
         exit(1);
     }
+
     // Pipes:
     // ItoB = input → blackboard
     // BtoD = blackboard → drone
@@ -30,7 +31,6 @@ int main() {
     if(pipe(OtoB) < 0) die("OtoB");
     if(pipe(TtoB) < 0) die("TtoB");
 
-    //DRONE 
     pid_t p = fork();
     if (p < 0) die("fork drone");
 
@@ -57,7 +57,6 @@ int main() {
         die("exec drone");
     }
 
-    //INPUT 
     pid_t p2 = fork();
     if (p2 < 0) die("fork input");
 
@@ -81,16 +80,18 @@ int main() {
         snprintf(fdItoB_w, 16, "%d", ItoB[1]);
 
         char inputPath[1024];
-        snprintf(inputPath, sizeof(inputPath), "%s/input", PATH);
+        snprintf(inputPath, sizeof(inputPath), "%s/input", PATH);    
 
-        char *argsI[] = { "konsole", "--workdir", PATH, "-e", inputPath, fdItoB_w, NULL };
+        char *argsI[] = {
+            "konsole",
+            "--workdir", PATH,
+            "-e", "./input", fdItoB_w,
+            NULL
+        };
         execvp("konsole", argsI);
-        // If konsole is not available (execvp returns), try to exec the program directly
-        execl(inputPath, inputPath, fdItoB_w, (char *)NULL);
         die("exec input");
     }
 
-    //OBSTACLES 
     pid_t po = fork();
     if(po < 0) die("fork obstacles");
     if(po == 0){
@@ -112,7 +113,6 @@ int main() {
         die("exec obstacles");
     }
 
-    //TARGETS 
     pid_t pt = fork();
     if(pt < 0) die("fork targets");
     if(pt == 0){
@@ -134,7 +134,6 @@ int main() {
         die("exec targets");
     }
 
-    //BLACKBOARD 
     // Parent closes ends not used by the blackboard
     close(BtoD[0]); // blackboard writes on BtoD[1]
     close(DtoB[1]); // blackboard reads on DtoB[0]
@@ -144,7 +143,7 @@ int main() {
     pid_t p3 = fork();
     if (p3 < 0) die("fork blackboard");
 
-    if (p3 == 0) { // child: BLACKBOARD
+    if (p3 == 0) { // child:blackboard 
 
         chdir(PATH);
 
@@ -160,8 +159,8 @@ int main() {
 
         char *argsB[] = {
             "konsole",
-            "--workdir", PATH,
-            "-e", blackPath,
+            "-e",
+            blackPath,
             fdItoB_r,
             fdBtoD_w,
             fdDtoB_r,
@@ -170,16 +169,8 @@ int main() {
             NULL
         };
 
-          execvp("konsole", argsB);
-          // Fallback: if konsole isn't present, run the blackboard binary directly
-          execl(blackPath, blackPath,
-              fdItoB_r,
-              fdBtoD_w,
-              fdDtoB_r,
-              fdOtoB_r,
-              fdTtoB_r,
-              (char *)NULL);
-          die("exec blackboard");
+        execvp("konsole", argsB);
+        die("exec blackboard");
     }
 
     return 0; // parent exits
