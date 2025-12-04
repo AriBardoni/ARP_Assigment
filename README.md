@@ -76,11 +76,14 @@ The **Blackboard** window displays the simulation map:
 
 The processes communicate via unnamed pipes. The data flow is as follows:
 
-1.  **Input -> Blackboard**: User commands and force increments (`KeyMsg`).
-2.  **Blackboard -> Drone**: Total calculated force (User input + Repulsive forces) (`ForceMsg`).
-3.  **Drone -> Blackboard**: Current state (Position, Velocity) (`StateMsg`).
-4.  **Obstacles -> Blackboard**: Obstacle positions (`ObjMsg`).
-5.  **Targets -> Blackboard**: Target positions (`ObjMsg`).
+```mermaid
+graph TD
+    Input[Input Process] -->|KeyMsg| Blackboard[Blackboard Process]
+    Blackboard -->|ForceMsg| Drone[Drone Process]
+    Drone -->|StateMsg| Blackboard
+    Obstacles[Obstacles Process] -->|ObjMsg| Blackboard
+    Targets[Targets Process] -->|ObjMsg| Blackboard
+```
 
 ## Logging
 
