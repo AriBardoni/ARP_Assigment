@@ -10,6 +10,22 @@
 #include <math.h>
 #include "common.h"
 
+#define N_OBSTACLES 10
+#define N_TARGETS   10
+#define DRONE_X0 50
+#define DRONE_Y0 50
+
+float OBS_RHO = 8.0f;
+float OBS_ETA = 6.0f;
+float OBS_STEP = 2.5f;
+
+float WALL_RHO = 6.0f;
+float WALL_ETA = 5.0f;
+float WALL_MAX = 2.0f;
+
+int SAFE_DIST = 10;
+int BORDER_MARGIN = 5;
+
 // main view window
 static WINDOW *viewWin;
 
@@ -27,15 +43,7 @@ static void init_ui(){
     viewWin = newwin(H, W, 0, 0);
     box(viewWin,0,0);
     wrefresh(viewWin);
-}
-
-#define N_OBSTACLES 10
-#define N_TARGETS   10
-
-#define DRONE_X0 50
-#define DRONE_Y0 50
-#define SAFE_DIST 12      
-#define BORDER_MARGIN 2   
+}  
 
 typedef struct {
     float x_ob;
@@ -49,6 +57,30 @@ typedef struct {
 
 Obstacle obs[N_OBSTACLES];
 Targets  tar[N_TARGETS];
+
+void load_params() {
+    FILE *f = fopen("params.txt", "r");
+    if(!f) return;
+
+    char key[64];
+    float val;
+
+    while (fscanf(f, "%63[^=]=%f\n", key, &val) == 2) {
+
+        if(strcmp(key, "OBS_RHO") == 0)        OBS_RHO = val;
+        else if(strcmp(key, "OBS_ETA") == 0)   OBS_ETA = val;
+        else if(strcmp(key, "OBS_STEP") == 0)  OBS_STEP = val;
+
+        else if(strcmp(key, "WALL_RHO") == 0)  WALL_RHO = val;
+        else if(strcmp(key, "WALL_ETA") == 0)  WALL_ETA = val;
+        else if(strcmp(key, "WALL_MAX") == 0)  WALL_MAX = val;
+
+        else if(strcmp(key, "SAFE_DIST") == 0) SAFE_DIST = (int)val;
+        else if(strcmp(key, "BORDER_MARGIN") == 0) BORDER_MARGIN = (int)val;
+    }
+
+    fclose(f);
+}
 
 int check_spawn_ok(int x, int y, int w, int h)
 {
@@ -184,6 +216,7 @@ int main(int argc,char **argv){
     curs_set(0);
 
     init_ui();
+    load_params();
 
     int w = getmaxx(viewWin);
     int h = getmaxy(viewWin);
@@ -221,6 +254,57 @@ int main(int argc,char **argv){
 
     while(1){
 
+        load_params();
+
+        // resize 
+        int ch = getch();
+        if (ch == KEY_RESIZE) {
+
+            int w_old = w;
+            int h_old = h;
+
+            // update ncurses internal size info
+            resize_term(0,0);
+
+            int newH, newW;
+            getmaxyx(stdscr, newH, newW);
+
+            delwin(viewWin);
+            viewWin = newwin(newH, newW, 0, 0);
+
+            w = newW;
+            h = newH;
+
+            box(viewWin,0,0);
+
+            // rescale obstacles proportionally to new size
+            for (int i = 0; i < N_OBSTACLES; i++) {
+
+                float rel_ox = (obs[i].x_ob - 1) / (float)(w_old - 2);
+                float rel_oy = (obs[i].y_ob - 1) / (float)(h_old - 2);
+
+                obs[i].x_ob = 1 + rel_ox * (w - 2);
+                obs[i].y_ob = 1 + rel_oy * (h - 2);
+
+                mvwaddch(viewWin, (int)obs[i].y_ob, (int)obs[i].x_ob, 'O');
+            }
+
+            // targets proportionally to new size
+            for (int i = 0; i < N_TARGETS; i++) {
+
+                float rel_ox = (tar[i].x_tar - 1) / (float)(w_old - 2);
+                float rel_oy = (tar[i].y_tar - 1) / (float)(h_old - 2);
+
+                tar[i].x_tar = 1 + rel_ox * (w - 2);
+                tar[i].y_tar = 1 + rel_oy * (h - 2);
+
+                mvwaddch(viewWin, (int)tar[i].y_tar, (int)tar[i].x_tar, '*');
+            }
+
+            wrefresh(viewWin);
+            continue;
+        }
+        
         fd_set s;
         FD_ZERO(&s);
         FD_SET(fdItoB,&s);
@@ -311,9 +395,9 @@ int main(int argc,char **argv){
         compute_repulsive_force(&state, obs, N_OBSTACLES, w, h, &Frx, &Fry);
 
         float WFx=0, WFy=0;
-        const float rho_wall = 6.0f;
-        const float eta_wall = 5.0f;
-        const float MAX_REP_WALL = 2.0f;
+        float rho_wall = 6.0f;
+        float eta_wall = 5.0f;
+        float MAX_REP_WALL = 2.0f;
 
         // wall forces
         if (state.x < rho_wall) {

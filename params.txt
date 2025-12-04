@@ -1,0 +1,18 @@
+### Drone physics ###
+MASS=1.0
+DAMPING=1.0
+TIMESTEP=0.1
+
+### Obstacle force field ###
+OBS_RHO=8.0
+OBS_ETA=6.0
+OBS_STEP=2.5
+
+### Wall force field ###
+WALL_RHO=6.0
+WALL_ETA=5.0
+WALL_MAX=2.0
+
+### Spawn constraints ###
+SAFE_DIST=10
+BORDER_MARGIN=5

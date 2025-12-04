@@ -5,8 +5,31 @@
 #include "log.h"
 #include "common.h"
 
+float MASS = 1.0f;
+float DAMPING = 1.0f;
+float TIMESTEP = 0.1f;
+
+void load_params_drone() {
+    FILE *f = fopen("params.txt", "r");
+    if(!f) return;
+
+    char key[64];
+    float val;
+
+    while (fscanf(f, "%63[^=]=%f\n", key, &val) == 2) {
+
+        if(strcmp(key, "MASS") == 0)      MASS = val;
+        else if(strcmp(key, "DAMPING") == 0)   DAMPING = val;
+        else if(strcmp(key, "TIMESTEP") == 0)  TIMESTEP = val;
+    }
+
+    fclose(f);
+}
+
 int main(int argc,char **argv){
     if(argc<3){ fprintf(stderr,"drone: missing fds\n"); return 1; }
+
+    load_params_drone();
 
     // Pipes passed by the blackboard
     int fdBtoD = atoi(argv[1]);  // blackboard → drone
@@ -22,11 +45,10 @@ int main(int argc,char **argv){
 
     // Force and physics params
     float Fx=0,Fy=0;
-    float M=1;
-    float K=1.0f;      // damping
-    float T=0.1f;     // update at 50Hz
 
     while(1){
+
+        load_params_drone();
         ForceMsg fm;
         ssize_t r = read(fdBtoD,&fm,sizeof(fm));
 
@@ -44,14 +66,13 @@ int main(int argc,char **argv){
         if(r==0) return 0; // pipe closed → exit
 
         // acceleration = (Force - damping*velocity) / mass
-        float ax=(Fx - K*vx)/M;
-        float ay=(Fy - K*vy)/M;
+        float ax = (Fx - DAMPING * vx) / MASS;
+        float ay = (Fy - DAMPING * vy) / MASS;
 
-        // Euler integration
-        vx += ax*T;
-        vy += ay*T;
-        x  += vx*T;
-        y  += vy*T;
+        vx += ax * TIMESTEP;
+        vy += ay * TIMESTEP;
+        x  += vx * TIMESTEP;
+        y  += vy * TIMESTEP;
 
         log_write2("POS", x, y);
         log_write2("VEL", vx, vy);
@@ -66,7 +87,7 @@ int main(int argc,char **argv){
         StateMsg sm={x,y,vx,vy};
         write(fdDtoB,&sm,sizeof(sm));
 
-        usleep((int)(T*100000)); // wait until next step
+        usleep((int)(TIMESTEP*100000)); // wait until next step
     }
 
     log_close();
