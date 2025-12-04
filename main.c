@@ -173,5 +173,5 @@ int main() {
         die("exec blackboard");
     }
 
-    return 0; // parent exits
+    return 0; 
 }

@@ -29,7 +29,6 @@ int BORDER_MARGIN = 5;
 // main view window
 static WINDOW *viewWin;
 
-// clean exit on CTRL+C
 static void cleanup(int sig){
     (void)sig;
     endwin();
@@ -58,6 +57,7 @@ typedef struct {
 Obstacle obs[N_OBSTACLES];
 Targets  tar[N_TARGETS];
 
+// function for reading the parameters from the file
 void load_params() {
     FILE *f = fopen("params.txt", "r");
     if(!f) return;
@@ -82,6 +82,7 @@ void load_params() {
     fclose(f);
 }
 
+// check if the position of the spaw isn't on the borders or too near to the drone 
 int check_spawn_ok(int x, int y, int w, int h)
 {
     float wx = (x - 1.0f) * 100.0f / (float)(w - 2);
@@ -104,6 +105,7 @@ int check_spawn_ok(int x, int y, int w, int h)
     return 1;
 }
 
+// check that the position for the spawn isn't already occupied 
 int is_occupied(int y, int x, Obstacle obs[], int n_obs, Targets tar[], int n_tar)
 {
     for (int i = 0; i < n_obs; i++) {
@@ -120,10 +122,7 @@ int is_occupied(int y, int x, Obstacle obs[], int n_obs, Targets tar[], int n_ta
 }
 
 // repulsive force 
-static void compute_repulsive_force(const StateMsg *state,
-                                    Obstacle obs[], int n_obs,
-                                    int w, int h,
-                                    float *Frx, float *Fry)
+static void compute_repulsive_force(const StateMsg *state, Obstacle obs[], int n_obs, int w, int h, float *Frx, float *Fry)
 {
     const float RHO  = 8.0f;
     const float ETA  = 6.0f;
@@ -304,7 +303,7 @@ int main(int argc,char **argv){
             wrefresh(viewWin);
             continue;
         }
-        
+
         fd_set s;
         FD_ZERO(&s);
         FD_SET(fdItoB,&s);
