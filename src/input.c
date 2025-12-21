@@ -14,103 +14,93 @@ int main(int argc, char **argv){
         return 1;
     }
 
-    int fdItoB = atoi(argv[1]);  // pipe to blackboard
-    if (!log_init("input.log")) {
-        perror("log_init input");
-    }
+    int fdItoB = atoi(argv[1]);
+    log_init("input.log");
 
-    // open /dev/tty to use ncurses in this terminal
     FILE *term_in  = fopen("/dev/tty", "r");
     FILE *term_out = fopen("/dev/tty", "w");
 
-    if(!term_in || !term_out){
-        perror("fopen /dev/tty");
-        return 1;
-    }
-
     SCREEN *scr = newterm(NULL, term_out, term_in);
-    if(!scr){
-        fprintf(stderr, "newterm() failed\n");
-        return 1;
-    }
-
     set_term(scr);
 
-    // setup ncurses mode
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
     timeout(50);
 
-    // print controller instructions
     printw("=== INPUT CONTROLLER ===\n");
     printw("i/j/k/l/u/o/n/, = movement\n");
     printw("b = brake | r = reset | q = quit\n");
     refresh();
 
-    // create the info window at the bottom
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
 
     infoWin = newwin(5, cols, rows - 5, 0);
     box(infoWin, 0, 0);
-    mvwprintw(infoWin, 0, 2, " INPUT DEBUG INFO ");
     wrefresh(infoWin);
+
+    KeyMsg km = {0,0,0};
+    KeyMsg last_km = {0,0,0};
+    const char *dir = "NONE";
+    const char *last_dir = "NONE";
 
     while(1){
 
         int c = getch();
-        if(c == ERR) continue;
-
-        KeyMsg km = (KeyMsg){0,0,0};
         int step = 1;
 
-        // map keys to force increments
-        switch(c){
-            case 'q': km.cmd = 9; break;
+        if(c != ERR){
 
-            case 'i': km.dFy = -step; break;
-            case 'k': km.dFy = +step; break;
-            case 'j': km.dFx = -step; break;
-            case 'l': km.dFx = +step; break;
+            km = (KeyMsg){0,0,0};
+            dir = "NONE";
 
-            // diagonals
-            case 'u': km.dFx = -step; km.dFy = -step; break;
-            case 'o': km.dFx = +step; km.dFy = -step; break;
-            case 'n': km.dFx = -step; km.dFy = +step; break;
-            case ',': km.dFx = +step; km.dFy = +step; break;
+            switch(c){
+                case 'q': km.cmd = 9; dir = "QUIT"; break;
 
-            case 'b': km.cmd = 1; break;
-            case 'r': km.cmd = 2; break;
+                case 'i': km.dFy = -step; dir = "UP"; break;
+                case 'k': km.dFy = +step; dir = "DOWN"; break;
+                case 'j': km.dFx = -step; dir = "LEFT"; break;
+                case 'l': km.dFx = +step; dir = "RIGHT"; break;
 
-            default: continue;
+                case 'u': km.dFx = -step; km.dFy = -step; dir = "UP-LEFT"; break;
+                case 'o': km.dFx = +step; km.dFy = -step; dir = "UP-RIGHT"; break;
+                case 'n': km.dFx = -step; km.dFy = +step; dir = "DOWN-LEFT"; break;
+                case ',': km.dFx = +step; km.dFy = +step; dir = "DOWN-RIGHT"; break;
+
+                case 'b': km.cmd = 1; dir = "BRAKE"; break;
+                case 'r': km.cmd = 2; dir = "RESET"; break;
+
+                default: break;
+            }
+
+            last_km = km;
+            last_dir = dir;
+
+            write(fdItoB, &km, sizeof(km));
+
+            if(km.cmd == 9)
+                break;
+        }
+        else {
+            km.dFx = 0;
+            km.dFy = 0;
+            write(fdItoB, &km, sizeof(km));
         }
 
-        // log key
-        char buf[64];
-        snprintf(buf, sizeof(buf), "KEY '%c' cmd=%d", c, km.cmd);
-        log_write2(buf, km.dFx, km.dFy);
-
-        // send to blackboard
-        write(fdItoB, &km, sizeof(km));
-
-        // update info window 
         werase(infoWin);
         box(infoWin, 0, 0);
-        mvwprintw(infoWin, 0, 2, " INPUT DEBUG INFO ");
+        mvwprintw(infoWin, 0, 2, " INPUT CONTROLS ");
 
-        mvwprintw(infoWin, 1, 2, "Key pressed: %c", (c >= 32 && c < 127) ? c : '?');
-        mvwprintw(infoWin, 2, 2, "Fx = %d   Fy = %d", km.dFx, km.dFy);
+        mvwprintw(infoWin, 1, 2, "i/k/j/l : up/down/left/right");
+        mvwprintw(infoWin, 2, 2, "u/o/n/, : diagonals");
 
-        if(km.cmd == 1) mvwprintw(infoWin, 3, 2, "Command: BRAKE");
-        else if(km.cmd == 2) mvwprintw(infoWin, 3, 2, "Command: RESET");
-        else if(km.cmd == 9) mvwprintw(infoWin, 3, 2, "Command: QUIT");
-        else mvwprintw(infoWin, 3, 2, "Command: FORCE");
+        mvwprintw(infoWin, 3, 2, "b=brake  r=reset  q=quit");
+        mvwprintw(infoWin, 3, 35,
+                  "Dir=%-10s Fx=%+5.2f Fy=%+5.2f",
+                  last_dir, last_km.dFx, last_km.dFy);
 
         wrefresh(infoWin);
-
-        if(km.cmd == 9)
-            break;
     }
 
     endwin();

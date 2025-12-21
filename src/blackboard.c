@@ -394,40 +394,6 @@ int main(int argc,char **argv){
         float Frx=0,Fry=0;
         compute_repulsive_force(&state, obs, N_OBSTACLES, w, h, &Frx, &Fry);
 
-        /*float WFx=0, WFy=0;
-        float rho_wall = 6.0f;
-        float eta_wall = 5.0f;
-        float MAX_REP_WALL = 2.0f;
-
-        // wall forces
-        if (state.x < rho_wall) {
-            float d = fmaxf(state.x,0.001f);
-            float F = eta_wall * ((1.0f/d)-(1.0f/rho_wall)) * (1.0f/(d*d));
-            if(F > MAX_REP_WALL) F=MAX_REP_WALL;
-            WFx += F;
-        }
-
-        if ((100.0f - state.x) < rho_wall) {
-            float d = fmaxf((100.0f - state.x),0.001f);
-            float F = eta_wall * ((1.0f/d)-(1.0f/rho_wall)) * (1.0f/(d*d));
-            if(F > MAX_REP_WALL) F=MAX_REP_WALL;
-            WFx -= F;
-        }
-
-        if (state.y < rho_wall) {
-            float d = fmaxf(state.y,0.001f);
-            float F = eta_wall * ((1.0f/d)-(1.0f/rho_wall)) * (1.0f/(d*d));
-            if(F > MAX_REP_WALL) F=MAX_REP_WALL;
-            WFy += F;
-        }
-
-        if ((100.0f - state.y) < rho_wall) {
-            float d = fmaxf((100.0f - state.y),0.001f);
-            float F = eta_wall * ((1.0f/d)-(1.0f/rho_wall)) * (1.0f/(d*d));
-            if(F > MAX_REP_WALL) F=MAX_REP_WALL;
-            WFy -= F;
-        }*/
-
         float totalFx = Fx + Frx;
         float totalFy = Fy + Fry;
 
