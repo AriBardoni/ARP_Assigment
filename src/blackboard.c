@@ -298,7 +298,7 @@ int main(int argc,char **argv){
                 tar[i].x_tar = 1 + rel_ox * (w - 2);
                 tar[i].y_tar = 1 + rel_oy * (h - 2);
 
-                mvwaddch(viewWin, (int)tar[i].y_tar, (int)tar[i].x_tar, '0');
+                mvwaddch(viewWin, (int)tar[i].y_tar, (int)tar[i].x_tar, i+1);
             }
 
             wrefresh(viewWin);
@@ -441,12 +441,23 @@ int main(int argc,char **argv){
         int cx=(int)((state.x/100.0f)*(w-3));
         int cy=(int)((state.y/100.0f)*(h-3));
 
-        for(int i=0;i<N_OBSTACLES;i++){
-            mvwaddch(viewWin,(int)obs[i].y_ob,(int)obs[i].x_ob,'O');
+        for(int i = 0; i < N_OBSTACLES; i++){
+            mvwaddch(
+                viewWin,
+                (int)obs[i].y_ob,
+                (int)obs[i].x_ob,
+                'X'
+            );
         }
 
-        for(int i=0;i<N_TARGETS;i++){
-            mvwaddch(viewWin,(int)tar[i].y_tar,(int)tar[i].x_tar,'*');
+        for(int i = 0; i < N_TARGETS; i++){
+            mvwprintw(
+                viewWin,
+                (int)tar[i].y_tar,
+                (int)tar[i].x_tar,
+                "%d",
+                i + 1
+            );
         }
 
         mvwaddch(viewWin,cy+1,cx+1,'+');
