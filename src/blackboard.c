@@ -394,7 +394,7 @@ int main(int argc,char **argv){
         float Frx=0,Fry=0;
         compute_repulsive_force(&state, obs, N_OBSTACLES, w, h, &Frx, &Fry);
 
-        float WFx=0, WFy=0;
+        /*float WFx=0, WFy=0;
         float rho_wall = 6.0f;
         float eta_wall = 5.0f;
         float MAX_REP_WALL = 2.0f;
@@ -426,10 +426,10 @@ int main(int argc,char **argv){
             float F = eta_wall * ((1.0f/d)-(1.0f/rho_wall)) * (1.0f/(d*d));
             if(F > MAX_REP_WALL) F=MAX_REP_WALL;
             WFy -= F;
-        }
+        }*/
 
-        float totalFx = Fx + Frx + WFx;
-        float totalFy = Fy + Fry + WFy;
+        float totalFx = Fx + Frx;
+        float totalFy = Fy + Fry;
 
         ForceMsg fm = { totalFx, totalFy, M,K,T,0 };
         write(fdBtoD, &fm, sizeof(fm));

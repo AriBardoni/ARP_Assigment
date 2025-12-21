@@ -75,6 +75,10 @@ int main(int argc,char **argv){
         x  += vx * TIMESTEP;
         y  += vy * TIMESTEP;
 
+        // eliminate numerical jitter
+        if (fabsf(vx) < 1e-3f) vx = 0.0f;
+        if (fabsf(vy) < 1e-3f) vy = 0.0f;
+
         log_write2("POS", x, y);
         log_write2("VEL", vx, vy);
 

@@ -16,6 +16,7 @@ typedef struct{
     float M,K,T;    // mass, damping, timestep
     int reset;      // flag to reset drone state
     int intensity;  // intensity of the force field
+    float wall_damping // intensity of the wall force 
 } ForceMsg;
 
 // From drone -> blackboard
