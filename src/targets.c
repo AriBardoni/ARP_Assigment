@@ -16,7 +16,7 @@ int main(int argc, char **argv){
     srand(time(NULL) ^ getpid());
 
     int w = 100, h = 100; 
-    ObjMsg msg = {.type = 'T'};
+    ObjMsg msg = {.type = '=0'};
 
     for(int i = 0; i < N_TARGETS; i++){
         int valid = 0;
