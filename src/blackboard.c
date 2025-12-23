@@ -161,6 +161,15 @@ void draw_map(StateMsg state, int w, int h){
         wrefresh(viewWin);
 }
 
+static inline double now_sec(void){
+
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+
+}
+
+
 // repulsive force 
 static void compute_repulsive_force(const StateMsg *state, Obstacle obs[], int n_obs, int w, int h, float *Frx, float *Fry)
 {
@@ -291,11 +300,15 @@ int main(int argc,char **argv){
     float Fx=0,Fy=0;
     float M=0.2f,K=0.1f,T=0.05f;
 
+    // draw period in seconds
+    double DRAW_T = 0.2;   // example: redraw every 200 ms
+
+
     StateMsg state={50,50,0,0};
     int counter = 0;
 
     double last_draw_time = 0.0;
-    
+
     while(1){
 
         load_params();
