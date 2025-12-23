@@ -156,11 +156,14 @@ void draw_map(StateMsg state, int w, int h){
                 (int)tar[i].y_tar,
                 (int)tar[i].x_tar,
                 "%d",
-                i + 1
+                i 
             );
         }
 
-        mvwaddch(viewWin,cy+1,cx+1,'+');
+        wattron(viewWin, COLOR_PAIR(1));
+        mvwaddch(viewWin, cy+1, cx+1, '+');
+        wattroff(viewWin, COLOR_PAIR(1));
+
         wrefresh(viewWin);
 }
 
@@ -253,6 +256,15 @@ int main(int argc,char **argv){
 
     setlocale(LC_ALL,"");
     initscr();
+
+    if (has_colors()) {
+    start_color();
+    use_default_colors();
+
+    // Pair 1: drone rosa (magenta)
+    init_pair(1, COLOR_RED, -1);
+    }
+
     noecho();
     cbreak();
     keypad(stdscr,TRUE);
