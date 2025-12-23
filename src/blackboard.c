@@ -10,6 +10,7 @@
 #include <math.h>
 #include <string.h>
 #include "common.h"
+#include <time.h>
 
 #define N_OBSTACLES 10
 #define N_TARGETS   10
@@ -29,6 +30,12 @@ int BORDER_MARGIN = 5;
 
 // main view window
 static WINDOW *viewWin;
+
+static double now_sec(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
 
 static void cleanup(int sig){
     (void)sig;
@@ -287,7 +294,7 @@ int main(int argc,char **argv){
     StateMsg state={50,50,0,0};
     int counter = 0;
 
-    time_t last_draw_time = 0;
+    double last_draw_time = 0.0;
     
     while(1){
 
@@ -335,10 +342,17 @@ int main(int argc,char **argv){
                 tar[i].x_tar = 1 + rel_ox * (w - 2);
                 tar[i].y_tar = 1 + rel_oy * (h - 2);
 
-                mvwaddch(viewWin, (int)tar[i].y_tar, (int)tar[i].x_tar, i+1);
+                mvwprintw(
+                    viewWin,
+                    (int)tar[i].y_tar,
+                    (int)tar[i].x_tar,
+                    "%d",
+                    i + 1
+                );
             }
 
             wrefresh(viewWin);
+            draw_map(state, w, h);
             continue;
         }
 
@@ -437,9 +451,9 @@ int main(int argc,char **argv){
         ForceMsg fm = { totalFx, totalFy, M,K,T,0 };
         write(fdBtoD, &fm, sizeof(fm));
 
-        time_t current_time = time(NULL);
+        double current_time = now_sec();
 
-        if (difftime(current_time, last_draw_time) >= 20.0) {
+        if (current_time - last_draw_time >= 20.0) {
             draw_map(state, w, h);
             last_draw_time = current_time;
         }
