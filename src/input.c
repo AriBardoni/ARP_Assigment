@@ -9,12 +9,13 @@ static WINDOW *infoWin;
 
 int main(int argc, char **argv){
 
-    if(argc < 2){
+    if(argc < 3){
         fprintf(stderr,"input: missing fd\n");
         return 1;
     }
 
     int fdItoB = atoi(argv[1]);
+    int fdW = atoi(argv[2]);
     log_init("input.log");
 
     FILE *term_in  = fopen("/dev/tty", "r");
@@ -44,6 +45,7 @@ int main(int argc, char **argv){
     KeyMsg last_km = {0,0,0};
     const char *dir = "NONE";
     const char *last_dir = "NONE";
+    int counter = 0;
 
     while(1){
 
@@ -101,6 +103,14 @@ int main(int argc, char **argv){
                   last_dir, last_km.dFx, last_km.dFy);
 
         wrefresh(infoWin);
+
+        // Watchdog signal
+        counter++;
+        if (counter >= 20) { // 20 * 50ms = 1s
+            int pid = PROCESS_INPUT;
+            write(fdW, &pid, sizeof(int));
+            counter = 0;
+        }
     }
 
     endwin();

@@ -35,6 +35,7 @@ int main(int argc,char **argv){
     // Pipes passed by the blackboard
     int fdBtoD = atoi(argv[1]);  // blackboard → drone
     int fdDtoB = atoi(argv[2]);  // drone → blackboard
+    int fdW = atoi(argv[3]);     // watchdog pipe
 
     // Initial drone state
     float x=50,y=50,vx=0,vy=0;
@@ -46,6 +47,7 @@ int main(int argc,char **argv){
 
     // Force and physics params
     float Fx=0,Fy=0;
+    int counter = 0;
 
     while(1){
 
@@ -91,6 +93,14 @@ int main(int argc,char **argv){
         // Send updated state back to blackboard
         StateMsg sm={x,y,vx,vy};
         write(fdDtoB,&sm,sizeof(sm));
+
+        // Watchdog signal
+        counter++;
+        if (counter >= 10) { // Every 10 * 0.1s = 1s
+            int pid = PROCESS_DRONE;
+            write(fdW, &pid, sizeof(int));
+            counter = 0;
+        }
 
         usleep((int)(TIMESTEP*100000)); // wait until next step
     }

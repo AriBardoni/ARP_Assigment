@@ -16,7 +16,7 @@ typedef struct{
     float M,K,T;    // mass, damping, timestep
     int reset;      // flag to reset drone state
     int intensity;  // intensity of the force field
-    float wall_damping // intensity of the wall force 
+    float wall_damping; // intensity of the wall force 
 } ForceMsg;
 
 // From drone -> blackboard
@@ -31,3 +31,13 @@ typedef struct{
     int id;
     float x,y;
 }ObjMsg;
+
+// Process IDs for Watchdog
+typedef enum {
+    PROCESS_DRONE = 0,
+    PROCESS_INPUT,
+    PROCESS_BLACKBOARD,
+    PROCESS_OBSTACLES,
+    PROCESS_TARGETS,
+    PROCESS_COUNT
+} ProcessID;
