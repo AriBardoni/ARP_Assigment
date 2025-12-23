@@ -33,13 +33,13 @@ int main() {
         perror("getcwd");
         exit(1);
     }
-/*
+
     // aggiunta: usare la cartella bin
     if (strlen(PATH) + 4 >= sizeof(PATH)) {
         fprintf(stderr, "PATH too long\n");
         exit(1);
     }
-    strcat(PATH, "/bin");*/
+    strcat(PATH, "/bin");
 
     // Pipes:
     // ItoB = input → blackboard
@@ -151,7 +151,6 @@ int main() {
     if(po < 0) die("fork obstacles");
     if(po == 0){
         chdir(PATH);
-        // ... (obstacles setup) ...
         // close unused pipe ends
         close(ItoB[0]); close(ItoB[1]);
         close(BtoD[0]); close(BtoD[1]);
@@ -176,7 +175,6 @@ int main() {
     if(pt < 0) die("fork targets");
     if(pt == 0){
         chdir(PATH);
-        // ... (targets setup) ...
         // close unused pipe ends
         close(ItoB[0]); close(ItoB[1]);
         close(BtoD[0]); close(BtoD[1]);

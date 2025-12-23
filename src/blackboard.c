@@ -287,6 +287,8 @@ int main(int argc,char **argv){
     StateMsg state={50,50,0,0};
     int counter = 0;
 
+    time_t last_draw_time = 0;
+    
     while(1){
 
         load_params();
@@ -435,7 +437,12 @@ int main(int argc,char **argv){
         ForceMsg fm = { totalFx, totalFy, M,K,T,0 };
         write(fdBtoD, &fm, sizeof(fm));
 
-        draw_map(state, w, h);
+        time_t current_time = time(NULL);
+
+        if (difftime(current_time, last_draw_time) >= 20.0) {
+            draw_map(state, w, h);
+            last_draw_time = current_time;
+        }
 
         // Watchdog signal
         counter++;
