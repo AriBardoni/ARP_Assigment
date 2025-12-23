@@ -122,6 +122,38 @@ int is_occupied(int y, int x, Obstacle obs[], int n_obs, Targets tar[], int n_ta
     return 0;
 }
 
+void draw_map(StateMsg state, int w, int h){
+
+    // drawing the map 
+        werase(viewWin);
+        box(viewWin,0,0);
+
+        int cx=(int)((state.x/100.0f)*(w-3));
+        int cy=(int)((state.y/100.0f)*(h-3));
+
+        for(int i = 0; i < N_OBSTACLES; i++){
+            mvwaddch(
+                viewWin,
+                (int)obs[i].y_ob,
+                (int)obs[i].x_ob,
+                'X'
+            );
+        }
+
+        for(int i = 0; i < N_TARGETS; i++){
+            mvwprintw(
+                viewWin,
+                (int)tar[i].y_tar,
+                (int)tar[i].x_tar,
+                "%d",
+                i + 1
+            );
+        }
+
+        mvwaddch(viewWin,cy+1,cx+1,'+');
+        wrefresh(viewWin);
+}
+
 // repulsive force 
 static void compute_repulsive_force(const StateMsg *state, Obstacle obs[], int n_obs, int w, int h, float *Frx, float *Fry)
 {
@@ -194,6 +226,7 @@ static void compute_repulsive_force(const StateMsg *state, Obstacle obs[], int n
 }
 
 int main(int argc,char **argv){
+
     if(argc < 6){
         fprintf(stderr,"blackboard: missing fds\n");
         return 1;
@@ -402,34 +435,7 @@ int main(int argc,char **argv){
         ForceMsg fm = { totalFx, totalFy, M,K,T,0 };
         write(fdBtoD, &fm, sizeof(fm));
 
-        // drawing the map 
-        werase(viewWin);
-        box(viewWin,0,0);
-
-        int cx=(int)((state.x/100.0f)*(w-3));
-        int cy=(int)((state.y/100.0f)*(h-3));
-
-        for(int i = 0; i < N_OBSTACLES; i++){
-            mvwaddch(
-                viewWin,
-                (int)obs[i].y_ob,
-                (int)obs[i].x_ob,
-                'X'
-            );
-        }
-
-        for(int i = 0; i < N_TARGETS; i++){
-            mvwprintw(
-                viewWin,
-                (int)tar[i].y_tar,
-                (int)tar[i].x_tar,
-                "%d",
-                i + 1
-            );
-        }
-
-        mvwaddch(viewWin,cy+1,cx+1,'+');
-        wrefresh(viewWin);
+        draw_map(state, w, h);
 
         // Watchdog signal
         counter++;
