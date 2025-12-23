@@ -43,6 +43,10 @@ int main(int argc, char **argv) {
     fprintf(log_file, "Watchdog started\n");
     fflush(log_file);
 
+    const char *proc_names[PROCESS_COUNT] = {
+        "Drone", "Input", "Blackboard", "Obstacles", "Targets"
+    };
+
     printf("Watchdog started. Monitoring %d processes via signals.\n", PROCESS_COUNT);
 
     while (1) {
@@ -67,6 +71,10 @@ int main(int argc, char **argv) {
                     // Log to file
                     fprintf(log_file, "[%ld] Process %d executing Area %d\n", (long)time(NULL), proc_id, area_id);
                     fflush(log_file);
+
+                    // Print to terminal
+                    printf("Watchdog: Received signal from %s (ID %d) | Area: %d\n", proc_names[proc_id], proc_id, area_id);
+                    fflush(stdout);
                 } else {
                     fprintf(stderr, "Watchdog: Received invalid process ID %d from PID %d\n", proc_id, info.si_pid);
                 }
