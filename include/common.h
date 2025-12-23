@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 
+#define RESPAWN_T 20.0
 // Messages passed through pipes between processes
 
 // From input -> blackboard
