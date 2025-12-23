@@ -42,3 +42,13 @@ typedef enum {
     PROCESS_TARGETS,
     PROCESS_COUNT
 } ProcessID;
+
+// Code Areas for Logging
+typedef enum {
+    AREA_INIT = 0,
+    AREA_COMPUTE,
+    AREA_WAIT_INPUT,
+    AREA_UPDATE_MAP,
+    AREA_SPAWN,
+    AREA_SLEEP
+} CodeArea;

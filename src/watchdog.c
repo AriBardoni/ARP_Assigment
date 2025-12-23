@@ -13,65 +13,82 @@
 #define TIMEOUT_THRESHOLD 3
 
 int main(int argc, char **argv) {
-    if (argc < 2) {
-        fprintf(stderr, "watchdog: missing pipe fd\n");
+    (void)argc; (void)argv; // Unused
+
+    // Block SIGUSR1 so we can wait for it synchronously
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    if (sigprocmask(SIG_BLOCK, &set, NULL) == -1) {
+        perror("sigprocmask");
         return 1;
     }
 
-    int pipe_fd = atoi(argv[1]);
-    
     // Array to store the last time a signal was received from each process
     time_t last_seen[PROCESS_COUNT];
+    int last_area[PROCESS_COUNT]; // Store last known code area
     time_t now = time(NULL);
     
     for (int i = 0; i < PROCESS_COUNT; i++) {
         last_seen[i] = now;
+        last_area[i] = AREA_INIT;
     }
 
-    printf("Watchdog started. Monitoring %d processes.\n", PROCESS_COUNT);
+    // Open log file
+    FILE *log_file = fopen("watchdog.log", "w");
+    if (!log_file) {
+        perror("fopen watchdog.log");
+        return 1;
+    }
+    fprintf(log_file, "Watchdog started\n");
+    fflush(log_file);
+
+    printf("Watchdog started. Monitoring %d processes via signals.\n", PROCESS_COUNT);
 
     while (1) {
-        fd_set set;
-        FD_ZERO(&set);
-        FD_SET(pipe_fd, &set);
-
-        struct timeval timeout;
+        struct timespec timeout;
         timeout.tv_sec = CHECK_INTERVAL;
-        timeout.tv_usec = 0;
+        timeout.tv_nsec = 0;
 
-        int ret = select(pipe_fd + 1, &set, NULL, NULL, &timeout);
+        siginfo_t info;
+        int sig = sigtimedwait(&set, &info, &timeout);
 
-        if (ret > 0) {
-            if (FD_ISSET(pipe_fd, &set)) {
-                int proc_id;
-                ssize_t n = read(pipe_fd, &proc_id, sizeof(int));
-                if (n == sizeof(int)) {
-                    if (proc_id >= 0 && proc_id < PROCESS_COUNT) {
-                        last_seen[proc_id] = time(NULL);
-                        // printf("Watchdog: Received signal from process %d\n", proc_id);
-                    } else {
-                        fprintf(stderr, "Watchdog: Received invalid process ID %d\n", proc_id);
-                    }
-                } else if (n == 0) {
-                    fprintf(stderr, "Watchdog: Pipe closed. Exiting.\n");
-                    return 0;
+        if (sig > 0) {
+            // Signal received
+            if (sig == SIGUSR1) {
+                int payload = info.si_value.sival_int;
+                int proc_id = payload & 0xFF; // Lower 8 bits for Process ID
+                int area_id = (payload >> 8) & 0xFF; // Next 8 bits for Code Area
+
+                if (proc_id >= 0 && proc_id < PROCESS_COUNT) {
+                    last_seen[proc_id] = time(NULL);
+                    last_area[proc_id] = area_id;
+                    
+                    // Log to file
+                    fprintf(log_file, "[%ld] Process %d executing Area %d\n", (long)time(NULL), proc_id, area_id);
+                    fflush(log_file);
+                } else {
+                    fprintf(stderr, "Watchdog: Received invalid process ID %d from PID %d\n", proc_id, info.si_pid);
                 }
             }
-        } else if (ret == -1) {
-            if (errno != EINTR) {
-                perror("watchdog select");
-                return 1;
+        } else {
+            if (errno != EAGAIN) {
+                perror("sigtimedwait");
+                // If interrupted or other error, continue?
+                // return 1; 
             }
         }
 
         // Check for timeouts
         now = time(NULL);
-        printf("Watchdog: Waiting... (%ld seconds elapsed)\n", (long)CHECK_INTERVAL); 
+        // printf("Watchdog: Checking timeouts... (%ld seconds elapsed)\n", (long)CHECK_INTERVAL); 
         
         for (int i = 0; i < PROCESS_COUNT; i++) {
             if (now - last_seen[i] > TIMEOUT_THRESHOLD) {
-                fprintf(stderr, "Watchdog ALERT: Process %d is unresponsive! (Last seen %ld seconds ago)\n", 
-                        i, now - last_seen[i]);
+                fprintf(stderr, "Watchdog ALERT: Process %d is unresponsive! (Last seen %ld seconds ago, Last Area: %d)\n", 
+                        i, now - last_seen[i], last_area[i]);
+                fprintf(log_file, "Watchdog ALERT: Process %d is unresponsive! (Last Area: %d)\n", i, last_area[i]);
+                fflush(log_file);
                 
                 fprintf(stderr, "Watchdog: Signaling main to shutdown...\n");
                 fflush(stderr);
@@ -82,5 +99,6 @@ int main(int argc, char **argv) {
         }
     }
 
+    fclose(log_file);
     return 0;
 }

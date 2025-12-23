@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+#include <signal.h>
 #include "log.h"
 #include "common.h"
 
@@ -35,7 +36,7 @@ int main(int argc,char **argv){
     // Pipes passed by the blackboard
     int fdBtoD = atoi(argv[1]);  // blackboard → drone
     int fdDtoB = atoi(argv[2]);  // drone → blackboard
-    int fdW = atoi(argv[3]);     // watchdog pipe
+    pid_t wd_pid = (pid_t)atoi(argv[3]);     // watchdog pid
 
     // Initial drone state
     float x=50,y=50,vx=0,vy=0;
@@ -97,8 +98,9 @@ int main(int argc,char **argv){
         // Watchdog signal
         counter++;
         if (counter >= 10) { // Every 10 * 0.1s = 1s
-            int pid = PROCESS_DRONE;
-            write(fdW, &pid, sizeof(int));
+            union sigval value;
+            value.sival_int = PROCESS_DRONE | (AREA_COMPUTE << 8);
+            sigqueue(wd_pid, SIGUSR1, value);
             counter = 0;
         }
 

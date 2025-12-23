@@ -250,7 +250,7 @@ int main(int argc,char **argv){
     int fdDtoB = atoi(argv[3]);
     int fdOtoB = atoi(argv[4]);
     int fdTtoB = atoi(argv[5]);
-    int fdBtoW = atoi(argv[6]);
+    pid_t wd_pid = (pid_t)atoi(argv[6]);
 
     signal(SIGINT,cleanup);
 
@@ -476,8 +476,9 @@ int main(int argc,char **argv){
         // Watchdog signal
         counter++;
         if (counter >= 50) { // 50 * 20ms = 1s
-            int pid = PROCESS_BLACKBOARD;
-            write(fdBtoW, &pid, sizeof(int));
+            union sigval value;
+            value.sival_int = PROCESS_BLACKBOARD | (AREA_UPDATE_MAP << 8);
+            sigqueue(wd_pid, SIGUSR1, value);
             counter = 0;
         }
     }

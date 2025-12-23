@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ncurses.h>
+#include <signal.h>
 #include "log.h"
 #include "common.h"
 
@@ -15,7 +16,7 @@ int main(int argc, char **argv){
     }
 
     int fdItoB = atoi(argv[1]);
-    int fdW = atoi(argv[2]);
+    pid_t wd_pid = (pid_t)atoi(argv[2]);
     log_init("input.log");
 
     FILE *term_in  = fopen("/dev/tty", "r");
@@ -107,8 +108,9 @@ int main(int argc, char **argv){
         // Watchdog signal
         counter++;
         if (counter >= 20) { // 20 * 50ms = 1s
-            int pid = PROCESS_INPUT;
-            write(fdW, &pid, sizeof(int));
+            union sigval value;
+            value.sival_int = PROCESS_INPUT | (AREA_WAIT_INPUT << 8);
+            sigqueue(wd_pid, SIGUSR1, value);
             counter = 0;
         }
     }

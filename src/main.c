@@ -26,7 +26,6 @@ void shutdown_handler(int sig) {
 int main() {
     signal(SIGUSR1, shutdown_handler);
 
-
     // Use current working directory as project path
     char PATH[1024];
     if (getcwd(PATH, sizeof(PATH)) == NULL) {
@@ -47,9 +46,7 @@ int main() {
     // DtoB = drone → blackboard
     // OtoB = obstacles → blackboard
     // TtoB = targets → blackboard 
-    // TtoB = targets → blackboard
-    // W_fd = watchdog
-    int ItoB[2], BtoD[2], DtoB[2], OtoB[2], TtoB[2], W_fd[2];
+    int ItoB[2], BtoD[2], DtoB[2], OtoB[2], TtoB[2];
 
     // Create pipes. Each pipe has a read end [0] and write end [1]
     if(pipe(ItoB) < 0) die("ItoB");
@@ -57,7 +54,6 @@ int main() {
     if(pipe(DtoB) < 0) die("DtoB");
     if(pipe(OtoB) < 0) die("OtoB");
     if(pipe(TtoB) < 0) die("TtoB");
-    if(pipe(W_fd) < 0) die("W_fd");
 
     // Watchdog
     pid_t pw = fork();
@@ -70,17 +66,17 @@ int main() {
         close(DtoB[0]); close(DtoB[1]);
         close(OtoB[0]); close(OtoB[1]);
         close(TtoB[0]); close(TtoB[1]);
-        close(W_fd[1]); 
-
-        char fdW_r[16];
-        snprintf(fdW_r, 16, "%d", W_fd[0]);
 
         char wdPath[1024];
         snprintf(wdPath, sizeof(wdPath), "%s/watchdog", PATH);
-        execlp(wdPath, "watchdog", fdW_r, NULL);
+        execlp(wdPath, "watchdog", NULL);
         die("exec watchdog");
     }
     p_watchdog = pw;
+
+    // Prepare Watchdog PID string to pass to children
+    char wdPidStr[16];
+    snprintf(wdPidStr, 16, "%d", p_watchdog);
 
     pid_t p = fork();
     if (p < 0) die("fork drone");
@@ -94,18 +90,16 @@ int main() {
         close(TtoB[0]); close(TtoB[1]);
         close(BtoD[1]); // drone reads from BtoD[0]
         close(DtoB[0]); // drone writes to DtoB[1]
-        close(W_fd[0]); // drone writes to W_fd[1]
 
         // Convert pipe numbers into strings to pass as arguments
-        char fdBtoD_r[16], fdDtoB_w[16], fdW_w[16];
+        char fdBtoD_r[16], fdDtoB_w[16];
         snprintf(fdBtoD_r,16,"%d",BtoD[0]);
         snprintf(fdDtoB_w,16,"%d",DtoB[1]);
-        snprintf(fdW_w,16,"%d",W_fd[1]);
 
         char dronePath[1024];
         snprintf(dronePath, sizeof(dronePath), "%s/drone", PATH);
 
-        execlp(dronePath, "drone", fdBtoD_r, fdDtoB_w, fdW_w, NULL);
+        execlp(dronePath, "drone", fdBtoD_r, fdDtoB_w, wdPidStr, NULL);
         die("exec drone");
     }
     p_drone = p;
@@ -122,16 +116,14 @@ int main() {
         close(DtoB[0]); close(DtoB[1]);
         close(OtoB[0]); close(OtoB[1]);
         close(TtoB[0]); close(TtoB[1]);
-        close(W_fd[0]);
 
         // Ensure correct terminal file descriptors
         dup2(STDIN_FILENO, 0);
         dup2(STDOUT_FILENO, 1);
         dup2(STDERR_FILENO, 2);
 
-        char fdItoB_w[16], fdW_w[16];
+        char fdItoB_w[16];
         snprintf(fdItoB_w, 16, "%d", ItoB[1]);
-        snprintf(fdW_w, 16, "%d", W_fd[1]);
 
         char inputPath[1024];
         snprintf(inputPath, sizeof(inputPath), "%s/input", PATH);    
@@ -139,7 +131,7 @@ int main() {
         char *argsI[] = {
             "konsole",
             "--workdir", PATH,
-            "-e", inputPath, fdItoB_w, fdW_w,
+            "-e", inputPath, fdItoB_w, wdPidStr,
             NULL
         };
         execvp("konsole", argsI);
@@ -157,16 +149,14 @@ int main() {
         close(DtoB[0]); close(DtoB[1]);
         close(TtoB[0]); close(TtoB[1]);
         close(OtoB[0]); // write only
-        close(W_fd[0]);
 
-        char fdOtoB_w[16], fdW_w[16];
+        char fdOtoB_w[16];
         snprintf(fdOtoB_w, 16, "%d", OtoB[1]);
-        snprintf(fdW_w, 16, "%d", W_fd[1]);
 
         char obstaclesPath[1024];
         snprintf(obstaclesPath, sizeof(obstaclesPath), "%s/obstacles", PATH);
 
-        execlp(obstaclesPath, "obstacles", fdOtoB_w, fdW_w, NULL);
+        execlp(obstaclesPath, "obstacles", fdOtoB_w, wdPidStr, NULL);
         die("exec obstacles");
     }
     p_obstacles = po;
@@ -181,16 +171,14 @@ int main() {
         close(DtoB[0]); close(DtoB[1]);
         close(OtoB[0]); close(OtoB[1]);
         close(TtoB[0]); // write only
-        close(W_fd[0]);
 
-        char fdTtoB_w[16], fdW_w[16];
+        char fdTtoB_w[16];
         snprintf(fdTtoB_w, 16, "%d", TtoB[1]);
-        snprintf(fdW_w, 16, "%d", W_fd[1]);
 
         char targetsPath[1024];
         snprintf(targetsPath, sizeof(targetsPath), "%s/targets", PATH);
 
-        execlp(targetsPath, "targets", fdTtoB_w, fdW_w, NULL);
+        execlp(targetsPath, "targets", fdTtoB_w, wdPidStr, NULL);
         die("exec targets");
     }
     p_targets = pt;
@@ -206,15 +194,13 @@ int main() {
 
     if (p3 == 0) { // child:blackboard 
         chdir(PATH);
-        close(W_fd[0]);
 
-        char fdItoB_r[16], fdBtoD_w[16], fdDtoB_r[16], fdOtoB_r[16], fdTtoB_r[16], fdW_w[16];
+        char fdItoB_r[16], fdBtoD_w[16], fdDtoB_r[16], fdOtoB_r[16], fdTtoB_r[16];
         snprintf(fdItoB_r,16,"%d",ItoB[0]);
         snprintf(fdBtoD_w,16,"%d",BtoD[1]);
         snprintf(fdDtoB_r,16,"%d",DtoB[0]);
         snprintf(fdOtoB_r,16,"%d",OtoB[0]);
         snprintf(fdTtoB_r,16,"%d",TtoB[0]);
-        snprintf(fdW_w,16,"%d",W_fd[1]);
 
         char blackPath[1024];
         snprintf(blackPath, sizeof(blackPath), "%s/blackboard", PATH);
@@ -229,7 +215,7 @@ int main() {
             fdDtoB_r,
             fdOtoB_r,
             fdTtoB_r,
-            fdW_w,
+            wdPidStr,
             NULL
         };
 
