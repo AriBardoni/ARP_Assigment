@@ -52,3 +52,6 @@ typedef enum {
     AREA_SPAWN,
     AREA_SLEEP
 } CodeArea;
+
+// Logging helper
+void log_message(const char *logfile, const char *proc_name, const char *msg);

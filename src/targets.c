@@ -30,6 +30,9 @@ int main(int argc, char **argv){
     ObjMsg msg = {.type = 'T'};
     int counter = 0;
 
+    // Log startup
+    log_message("LogFile2", "Targets", "Process started");
+
     while(1){
 
         double t = now_sec();

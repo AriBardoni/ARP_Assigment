@@ -34,20 +34,12 @@ int main(int argc, char **argv) {
         last_area[i] = AREA_INIT;
     }
 
-    // Open log file
-    FILE *log_file = fopen("watchdog.log", "w");
-    if (!log_file) {
-        perror("fopen watchdog.log");
-        return 1;
-    }
-    fprintf(log_file, "Watchdog started\n");
-    fflush(log_file);
-
     const char *proc_names[PROCESS_COUNT] = {
         "Drone", "Input", "Blackboard", "Obstacles", "Targets"
     };
 
     printf("Watchdog started. Monitoring %d processes via signals.\n", PROCESS_COUNT);
+    log_message("LogFile1", "Watchdog", "Watchdog started");
 
     while (1) {
         struct timespec timeout;
@@ -69,8 +61,9 @@ int main(int argc, char **argv) {
                     last_area[proc_id] = area_id;
                     
                     // Log to file
-                    fprintf(log_file, "[%ld] Process %d executing Area %d\n", (long)time(NULL), proc_id, area_id);
-                    fflush(log_file);
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "Process %s executing Area %d", proc_names[proc_id], area_id);
+                    log_message("LogFile1", "Watchdog", msg);
 
                     // Print to terminal
                     printf("Watchdog: Received signal from %s (ID %d) | Area: %d\n", proc_names[proc_id], proc_id, area_id);
@@ -93,10 +86,12 @@ int main(int argc, char **argv) {
         
         for (int i = 0; i < PROCESS_COUNT; i++) {
             if (now - last_seen[i] > TIMEOUT_THRESHOLD) {
+                char msg[256];
+                snprintf(msg, sizeof(msg), "ALERT: Process %d is unresponsive! (Last Area: %d)", i, last_area[i]);
+                log_message("LogFile1", "Watchdog", msg);
+                
                 fprintf(stderr, "Watchdog ALERT: Process %d is unresponsive! (Last seen %ld seconds ago, Last Area: %d)\n", 
                         i, now - last_seen[i], last_area[i]);
-                fprintf(log_file, "Watchdog ALERT: Process %d is unresponsive! (Last Area: %d)\n", i, last_area[i]);
-                fflush(log_file);
                 
                 fprintf(stderr, "Watchdog: Signaling main to shutdown...\n");
                 fflush(stderr);
@@ -107,6 +102,5 @@ int main(int argc, char **argv) {
         }
     }
 
-    fclose(log_file);
     return 0;
 }

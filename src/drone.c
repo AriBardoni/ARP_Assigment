@@ -65,6 +65,7 @@ int main(int argc,char **argv){
                 // Reset drone
                 x=50; y=50;
                 vx=0; vy=0;
+                log_message("LogFile2", "Drone", "Resetting drone position and velocity.");
             }
         }
         if(r==0) return 0; // pipe closed → exit

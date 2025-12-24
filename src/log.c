@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-//#include <linux/time.h>
+#include <string.h>
+#include <sys/file.h>
+#include <unistd.h>
+#include <errno.h>
+#include "common.h"
 
 // This file implements a very simple logging module.
 // It lets us write timestamped messages to a file,
@@ -49,4 +53,35 @@ void log_close() {
     fprintf(logf, "==== LOG END ====\n");
     fclose(logf);
     logf = NULL;
+}
+
+// Thread-safe / Process-safe logging function
+void log_message(const char *logfile, const char *proc_name, const char *msg) {
+    FILE *f = fopen(logfile, "a");
+    if (!f) {
+        perror("fopen logfile");
+        return;
+    }
+
+    // Lock the file
+    int fd = fileno(f);
+    if (flock(fd, LOCK_EX) == -1) {
+        perror("flock");
+        fclose(f);
+        return;
+    }
+
+    // Get current time
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char time_str[64];
+    strftime(time_str, sizeof(time_str), "%H:%M:%S", t);
+
+    // Write message: <Time> <ProcessName> <Message>
+    fprintf(f, "%s %s %s\n", time_str, proc_name, msg);
+    fflush(f);
+
+    // Unlock and close
+    flock(fd, LOCK_UN);
+    fclose(f);
 }

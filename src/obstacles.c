@@ -30,6 +30,9 @@ int main(int argc, char **argv){
     ObjMsg msg = {.type = 'X'};
     int counter = 0;
 
+    // Log startup
+    log_message("LogFile2", "Obstacles", "Process started");
+
     while(1){
 
         double t = now_sec();
@@ -48,9 +51,9 @@ int main(int argc, char **argv){
         }
 
         // watchdog every 1 second
-        usleep(20000); // 20 ms
+        usleep(100000); // 100 ms
         counter++;
-        if (counter >= 50) {
+        if (counter >= 10) { // 100ms * 10 = 1s
             union sigval value;
             value.sival_int = PROCESS_OBSTACLES | (AREA_SPAWN << 8);
             sigqueue(wd_pid, SIGUSR1, value);

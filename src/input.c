@@ -48,12 +48,18 @@ int main(int argc, char **argv){
     const char *last_dir = "NONE";
     int counter = 0;
 
+    // Log startup
+    log_message("LogFile2", "Input", "Process started");
+
     while(1){
 
         int c = getch();
         int step = 1;
 
         if(c != ERR){
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Key pressed: %c", c);
+            log_message("LogFile2", "Input", msg);
 
             km = (KeyMsg){0,0,0};
             dir = "NONE";

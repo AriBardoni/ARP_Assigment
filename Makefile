@@ -34,7 +34,7 @@ input: $(OBJ_DIR)/input.o $(OBJ_DIR)/log.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON) $(LDLIBS_NCURSES)
 
-blackboard: $(OBJ_DIR)/blackboard.o
+blackboard: $(OBJ_DIR)/blackboard.o $(OBJ_DIR)/log.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON) $(LDLIBS_NCURSES)
 
@@ -46,7 +46,7 @@ targets: $(OBJ_DIR)/targets.o $(OBJ_DIR)/log.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
 
-watchdog: $(OBJ_DIR)/watchdog.o
+watchdog: $(OBJ_DIR)/watchdog.o $(OBJ_DIR)/log.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
 
