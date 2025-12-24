@@ -14,11 +14,12 @@
 
 #define N_OBSTACLES 10
 #define N_TARGETS   10
+#define TARGET_RADIUS 1.0f
 #define DRONE_X0 50
 #define DRONE_Y0 50
 
 // draw period in seconds
-double DRAW_T = 0.2;  
+double DRAW_T = 0.05;  
 
 float OBS_RHO = 8.0f;
 float OBS_ETA = 6.0f;
@@ -30,6 +31,8 @@ float WALL_MAX = 2.0f;
 
 int SAFE_DIST = 10;
 int BORDER_MARGIN = 5;
+
+int current_target = 0;
 
 // main view window
 static WINDOW *viewWin;
@@ -63,6 +66,8 @@ typedef struct {
 typedef struct {
     float x_tar;
     float y_tar;
+    int active;
+    int taken;
 } Targets;
 
 Obstacle obs[N_OBSTACLES];
@@ -150,15 +155,27 @@ void draw_map(StateMsg state, int w, int h){
             );
         }
 
-        for(int i = 0; i < N_TARGETS; i++){
-            mvwprintw(
-                viewWin,
-                (int)tar[i].y_tar,
-                (int)tar[i].x_tar,
-                "%d",
-                i 
-            );
+        for (int i = 0; i < N_TARGETS; i++) {
+
+        if (tar[i].taken)
+            continue;   // target taken, no redraw
+
+        if (tar[i].active) {
+            wattron(viewWin, COLOR_PAIR(2)); 
         }
+
+        mvwprintw(
+            viewWin,
+            (int)tar[i].y_tar,
+            (int)tar[i].x_tar,
+            "%d",
+            i          
+        );
+
+        if (tar[i].active) {
+            wattroff(viewWin, COLOR_PAIR(2));
+        }
+    }
 
         wattron(viewWin, COLOR_PAIR(1));
         mvwaddch(viewWin, cy+1, cx+1, '+');
@@ -263,6 +280,7 @@ int main(int argc,char **argv){
 
     // Pair 1: drone rosa (magenta)
     init_pair(1, COLOR_RED, -1);
+    init_pair(2, COLOR_YELLOW, -1);
     }
 
     noecho();
@@ -301,6 +319,8 @@ int main(int argc,char **argv){
 
         tar[i].y_tar = y;
         tar[i].x_tar = x;
+        tar[i].taken = 0;
+        tar[i].active = (i == 0); 
     }
 
     float Fx=0,Fy=0;
@@ -443,6 +463,8 @@ int main(int argc,char **argv){
                 if(read(fdTtoB,&om,sizeof(om))>0){
                     if(om.id >= 0 && om.id < N_TARGETS){
 
+                        if(tar[om.id].taken) continue;
+
                         int y = (int)((om.y/100.0f)*(h-2));
                         int x = (int)((om.x/100.0f)*(w-2));
 
@@ -465,6 +487,32 @@ int main(int argc,char **argv){
 
         ForceMsg fm = { totalFx, totalFy, M,K,T,0 };
         write(fdBtoD, &fm, sizeof(fm));
+
+        // target collection check 
+        if (current_target < N_TARGETS &&
+            tar[current_target].taken == 0 &&
+            tar[current_target].active == 1)
+        {
+            float dx = state.x - tar[current_target].x_tar;
+            float dy = state.y - tar[current_target].y_tar;
+
+            if (dx*dx + dy*dy < TARGET_RADIUS*TARGET_RADIUS) {
+
+                // target taken 
+                tar[current_target].taken  = 1;
+                tar[current_target].active = 0;
+
+                current_target++;
+
+                // next target becomes active
+                if (current_target < N_TARGETS) {
+                    tar[current_target].active = 1;
+                } else {
+                    // all target collected 
+                    // HERE: SCORE, FINISH GAME
+                }
+            }
+        }
 
         double current_time = now_sec();
 
