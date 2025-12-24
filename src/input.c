@@ -85,11 +85,6 @@ int main(int argc, char **argv){
             if(km.cmd == 9)
                 break;
         }
-        /*else {
-            km.dFx = 0;
-            km.dFy = 0;
-            write(fdItoB, &km, sizeof(km));
-        }*/
 
         werase(infoWin);
         box(infoWin, 0, 0);

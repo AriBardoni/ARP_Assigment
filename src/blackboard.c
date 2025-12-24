@@ -14,7 +14,7 @@
 
 #define N_OBSTACLES 10
 #define N_TARGETS   10
-#define TARGET_RADIUS 1.0f
+#define TARGET_RADIUS 6.5f
 #define DRONE_X0 50
 #define DRONE_Y0 50
 
@@ -493,8 +493,11 @@ int main(int argc,char **argv){
             tar[current_target].taken == 0 &&
             tar[current_target].active == 1)
         {
-            float dx = state.x - tar[current_target].x_tar;
-            float dy = state.y - tar[current_target].y_tar;
+            float tx = (tar[current_target].x_tar - 1.0f) * 100.0f / (w - 2);
+            float ty = (tar[current_target].y_tar - 1.0f) * 100.0f / (h - 2);
+
+            float dx = state.x - tx;
+            float dy = state.y - ty;
 
             if (dx*dx + dy*dy < TARGET_RADIUS*TARGET_RADIUS) {
 
@@ -534,3 +537,4 @@ int main(int argc,char **argv){
     cleanup(0);
     return 0;
 }
+

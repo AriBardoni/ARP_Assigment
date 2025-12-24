@@ -10,7 +10,7 @@
 // Check interval in seconds
 #define CHECK_INTERVAL 1
 // Timeout threshold (if no signal for this long, consider dead)
-#define TIMEOUT_THRESHOLD 3
+#define TIMEOUT_THRESHOLD 10
 
 int main(int argc, char **argv) {
     (void)argc; (void)argv; // Unused

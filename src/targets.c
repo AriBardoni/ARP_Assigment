@@ -25,9 +25,9 @@ int main(int argc, char **argv){
     pid_t wd_pid = (pid_t)atoi(argv[2]);   // watchdog pid
 
     srand(time(NULL) ^ (getpid() << 1));
+    double last_spawn = now_sec();
 
     ObjMsg msg = {.type = 'T'};
-    double last_spawn = 0.0;
     int counter = 0;
 
     while(1){
