@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <ncurses.h>
 #include <signal.h>
-#include "log.h"
+#include "logger.h"
 #include "common.h"
 
 static WINDOW *infoWin;
@@ -15,14 +15,28 @@ int main(int argc, char **argv){
         return 1;
     }
 
+    logger_init();
+    log_process_register("INPUT", getpid());
+    log_system("INPUT", "started");
+
     int fdItoB = atoi(argv[1]);
     pid_t wd_pid = (pid_t)atoi(argv[2]);
-    log_init("input.log");
 
     FILE *term_in  = fopen("/dev/tty", "r");
     FILE *term_out = fopen("/dev/tty", "w");
 
+    if (!term_in || !term_out) {
+        log_system("INPUT", "failed to open /dev/tty");
+        return 1;
+    }
+
     SCREEN *scr = newterm(NULL, term_out, term_in);
+    if (!scr) {
+        log_system("INPUT", "newterm failed");
+        fclose(term_in);
+        fclose(term_out);
+        return 1;
+    }
     set_term(scr);
 
     cbreak();
@@ -83,6 +97,11 @@ int main(int argc, char **argv){
                 default: break;
             }
 
+            // log only if a meaningful command was produced
+            if (km.cmd != 0 || km.dFx != 0.0f || km.dFy != 0.0f) {
+                log_system("INPUT", dir);
+            }
+
             last_km = km;
             last_dir = dir;
 
@@ -115,6 +134,8 @@ int main(int argc, char **argv){
             counter = 0;
         }
     }
+
+    log_system("INPUT", "exiting");
 
     endwin();
     delscreen(scr);

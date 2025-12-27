@@ -22,31 +22,39 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 
 # Eseguibili
 
-main: $(OBJ_DIR)/main.o
+main: $(OBJ_DIR)/main.o $(OBJ_DIR)/logger.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
 
-drone: $(OBJ_DIR)/drone.o $(OBJ_DIR)/log.o
+drone: $(OBJ_DIR)/drone.o $(OBJ_DIR)/logger.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
 
-input: $(OBJ_DIR)/input.o $(OBJ_DIR)/log.o
+input: $(OBJ_DIR)/input.o $(OBJ_DIR)/logger.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON) $(LDLIBS_NCURSES)
 
+<<<<<<< HEAD
 blackboard: $(OBJ_DIR)/blackboard.o $(OBJ_DIR)/log.o
+=======
+blackboard: $(OBJ_DIR)/blackboard.o $(OBJ_DIR)/logger.o
+>>>>>>> 27aeca3 (added log?)
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON) $(LDLIBS_NCURSES)
 
-obstacles: $(OBJ_DIR)/obstacles.o $(OBJ_DIR)/log.o
+obstacles: $(OBJ_DIR)/obstacles.o $(OBJ_DIR)/logger.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
 
-targets: $(OBJ_DIR)/targets.o $(OBJ_DIR)/log.o
+targets: $(OBJ_DIR)/targets.o $(OBJ_DIR)/logger.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
 
+<<<<<<< HEAD
 watchdog: $(OBJ_DIR)/watchdog.o $(OBJ_DIR)/log.o
+=======
+watchdog: $(OBJ_DIR)/watchdog.o $(OBJ_DIR)/logger.o
+>>>>>>> 27aeca3 (added log?)
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
 

@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <signal.h>
+#include "logger.h"
 #include "common.h"
 
 #define N_OBS 10
@@ -20,6 +21,10 @@ int main(int argc, char **argv){
         fprintf(stderr,"obstacles: missing fd\n");
         return 1;
     }
+
+    logger_init();
+    log_process_register("OBSTACLES", getpid());
+    log_system("OBSTACLES", "started");
 
     int fdOtoB = atoi(argv[1]);   // pipe to blackboard
     pid_t wd_pid = (pid_t)atoi(argv[2]);   // watchdog pid
@@ -39,6 +44,8 @@ int main(int argc, char **argv){
 
         // respawn every 20 seconds
         if (t - last_spawn >= RESPAWN_T) {
+
+            log_system("OBSTACLES", "respawning obstacles");
 
             for(int i = 0; i < N_OBS; i++){
                 msg.id = i;

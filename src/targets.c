@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <signal.h>
+#include "logger.h"
 #include "common.h"
 
 #define N_TARGETS 10
@@ -17,9 +18,14 @@ static double now_sec(void) {
 
 int main(int argc, char **argv){
     if(argc < 3){
-        fprintf(stderr,"targets: missing fd\n");
+        logger_init();
+        log_system("TARGETS", "missing fd");
         return 1;
     }
+
+    logger_init();
+    log_process_register("TARGETS", getpid());
+    log_system("TARGETS", "started");
 
     int fdTtoB = atoi(argv[1]);   // pipe to blackboard
     pid_t wd_pid = (pid_t)atoi(argv[2]);   // watchdog pid
@@ -39,6 +45,8 @@ int main(int argc, char **argv){
 
         // respawn every 20 seconds
         if (t - last_spawn >= RESPAWN_T) {
+
+            log_system("TARGETS", "respawning targets");
 
             for(int i = 0; i < N_TARGETS; i++){
                 msg.id = i;

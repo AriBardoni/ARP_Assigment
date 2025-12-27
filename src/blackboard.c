@@ -9,8 +9,8 @@
 #include <time.h>
 #include <math.h>
 #include <string.h>
+#include "logger.h"
 #include "common.h"
-#include <time.h>
 
 #define N_OBSTACLES 10
 #define N_TARGETS   10
@@ -333,6 +333,10 @@ int main(int argc,char **argv){
         return 1;
     }
 
+    logger_init();
+    log_process_register("BLACKBOARD", getpid());
+    log_system("BLACKBOARD", "started");
+
     int fdItoB = atoi(argv[1]);
     int fdBtoD = atoi(argv[2]);
     int fdDtoB = atoi(argv[3]);
@@ -487,6 +491,8 @@ int main(int argc,char **argv){
                 KeyMsg km;
                 if(read(fdItoB,&km,sizeof(km))>0){
 
+                    log_system("BLACKBOARD", "input received");
+
                     if(km.cmd==9) break;
 
                     else if(km.cmd==1){
@@ -510,7 +516,9 @@ int main(int argc,char **argv){
             if(FD_ISSET(fdDtoB,&s)){
                 StateMsg sm;
                 if(read(fdDtoB,&sm,sizeof(sm))>0)
-                    state = sm;
+
+                log_system("BLACKBOARD", "drone state updated");
+                state = sm;
             }
 
             // obstacles
@@ -583,12 +591,13 @@ int main(int argc,char **argv){
                 tar[current_target].active = 0;
 
                 current_target++;
+                log_system("BLACKBOARD", "target %d collected", current_target);
 
                 // next target becomes active
                 if (current_target < N_TARGETS) {
                     tar[current_target].active = 1;
                 } else {
-                    // all target collected
+                    log_system("BLACKBOARD", "all targets collected");
                     // HERE: SCORE, FINISH GAME
                 }
             }
@@ -611,6 +620,7 @@ int main(int argc,char **argv){
         }
     }
 
+    log_system("BLACKBOARD", "exiting");
     cleanup(0);
     return 0;
 }
