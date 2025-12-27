@@ -63,16 +63,9 @@ int main(int argc,char **argv){
             Fy = fm.Fy;
 
             if(fm.reset){
-<<<<<<< HEAD
-                // Reset drone
-                x=50; y=50;
-                vx=0; vy=0;
-                log_message("LogFile2", "Drone", "Resetting drone position and velocity.");
-=======
                 log_system("DRONE", "reset received");
                 x = 50; y = 50;
                 vx = 0; vy = 0;
->>>>>>> 27aeca3 (added log?)
             }
         }
 

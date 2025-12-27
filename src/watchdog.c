@@ -39,7 +39,6 @@ int main(int argc, char **argv) {
         last_area[i] = AREA_INIT;
     }
 
-<<<<<<< HEAD
     const char *proc_names[PROCESS_COUNT] = {
         "Drone", "Input", "Blackboard", "Obstacles", "Targets"
     };
@@ -47,8 +46,6 @@ int main(int argc, char **argv) {
     printf("Watchdog started. Monitoring %d processes via signals.\n", PROCESS_COUNT);
     log_message("LogFile1", "Watchdog", "Watchdog started");
 
-=======
->>>>>>> 27aeca3 (added log?)
     while (1) {
         struct timespec timeout;
         timeout.tv_sec = CHECK_INTERVAL;
@@ -58,25 +55,18 @@ int main(int argc, char **argv) {
         int sig = sigtimedwait(&set, &info, &timeout);
 
         if (sig > 0 && sig == SIGUSR1) {
-
-<<<<<<< HEAD
-                if (proc_id >= 0 && proc_id < PROCESS_COUNT) {
-                    last_seen[proc_id] = time(NULL);
-                    last_area[proc_id] = area_id;
-                    
-                    // Log to file
-                    char msg[256];
-                    snprintf(msg, sizeof(msg), "Process %s executing Area %d", proc_names[proc_id], area_id);
-                    log_message("LogFile1", "Watchdog", msg);
-=======
             int payload = info.si_value.sival_int;
             int proc_id = payload & 0xFF;          // process ID
             int area_id = (payload >> 8) & 0xFF;   // code area
->>>>>>> 27aeca3 (added log?)
 
             if (proc_id >= 0 && proc_id < PROCESS_COUNT) {
                 last_seen[proc_id] = time(NULL);
                 last_area[proc_id] = area_id;
+                
+                // Log to file
+                char msg[256];
+                snprintf(msg, sizeof(msg), "Process %s executing Area %d", proc_names[proc_id], area_id);
+                log_message("LogFile1", "Watchdog", msg);
             } else {
                 log_system("WATCHDOG", "received invalid process id");
             }
@@ -91,7 +81,6 @@ int main(int argc, char **argv) {
 
         for (int i = 0; i < PROCESS_COUNT; i++) {
             if (now - last_seen[i] > TIMEOUT_THRESHOLD) {
-<<<<<<< HEAD
                 char msg[256];
                 snprintf(msg, sizeof(msg), "ALERT: Process %d is unresponsive! (Last Area: %d)", i, last_area[i]);
                 log_message("LogFile1", "Watchdog", msg);
@@ -101,12 +90,10 @@ int main(int argc, char **argv) {
                 
                 fprintf(stderr, "Watchdog: Signaling main to shutdown...\n");
                 fflush(stderr);
-=======
 
                 log_system("WATCHDOG", "ALERT: process unresponsive");
                 log_system("WATCHDOG", "signaling main for shutdown");
 
->>>>>>> 27aeca3 (added log?)
                 kill(getppid(), SIGUSR1);
 
                 // Wait to be terminated by main

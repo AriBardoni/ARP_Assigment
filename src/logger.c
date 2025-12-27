@@ -4,7 +4,8 @@
 #include <sys/file.h>
 #include <unistd.h>
 #include <stdarg.h>
-
+#include <sys/stat.h>
+#include <sys/types.h>
 #define LOG_DIR "logs"
 #define SYSTEM_LOG   LOG_DIR "/system.log"
 #define WATCHDOG_LOG LOG_DIR "/watchdog.log"
@@ -29,14 +30,17 @@ static void locked_write(FILE *f, const char *fmt, ...) {
 /* -------- public API -------- */
 
 void logger_init(void) {
-    /* nothing to do for now, files opened on demand */
+    struct stat st = {0};
+    if (stat(LOG_DIR, &st) == -1) {
+        mkdir(LOG_DIR, 0700);
+    }
 }
 
 void log_process_register(const char *proc, pid_t pid) {
     FILE *f = fopen(PROCESS_LOG, "a");
     if (!f) return;
 
-    locked_write(f, "%s %d\n", proc, pid);
+    locked_write(f, "[%ld] %s %d\n", now_ms(), proc, pid);
     fclose(f);
 }
 
@@ -73,5 +77,13 @@ void log_watchdog(const char *fmt, ...) {
     fprintf(f, "\n");
     fflush(f);
     flock(fileno(f), LOCK_UN);
+    fclose(f);
+}
+
+void log_message(const char *logfile, const char *proc_name, const char *msg) {
+    FILE *f = fopen(logfile, "a");
+    if (!f) return;
+
+    locked_write(f, "[%ld] %s %s\n", now_ms(), proc_name, msg);
     fclose(f);
 }
