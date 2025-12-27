@@ -6,7 +6,7 @@
 #include <stdarg.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#define LOG_DIR "logs"
+#define LOG_DIR "/home/ertoto/Documenti/GitHub/ARP_Assigment/logs"
 #define SYSTEM_LOG   LOG_DIR "/system.log"
 #define WATCHDOG_LOG LOG_DIR "/watchdog.log"
 #define PROCESS_LOG  LOG_DIR "/processes.log"
