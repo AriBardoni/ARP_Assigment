@@ -516,8 +516,6 @@ int main(int argc,char **argv){
             if(FD_ISSET(fdDtoB,&s)){
                 StateMsg sm;
                 if(read(fdDtoB,&sm,sizeof(sm))>0)
-
-                log_system("BLACKBOARD", "drone state updated");
                 state = sm;
             }
 
