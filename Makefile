@@ -4,7 +4,7 @@ CFLAGS  = -Wall -Wextra -std=c11 -g -D_GNU_SOURCE -Iinclude
 LDLIBS_COMMON   = -lm
 LDLIBS_NCURSES  = -lncursesw
 
-TARGETS = main drone input blackboard obstacles targets watchdog
+TARGETS = main drone input blackboard obstacles targets watchdog network
 
 BIN_DIR   = bin
 SRC_DIR   = src
@@ -47,6 +47,10 @@ targets: $(OBJ_DIR)/targets.o $(OBJ_DIR)/logger.o
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
 
 watchdog: $(OBJ_DIR)/watchdog.o $(OBJ_DIR)/logger.o
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
+
+network: $(OBJ_DIR)/network.o $(OBJ_DIR)/logger.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $(BIN_DIR)/$@ $^ $(LDLIBS_COMMON)
 

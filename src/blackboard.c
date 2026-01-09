@@ -333,7 +333,7 @@ int main(int argc,char **argv){
         return 1;
     }
 
-    logger_init();
+    logger_init("../logs");
     log_process_register("BLACKBOARD", getpid());
     log_system("BLACKBOARD", "started");
 

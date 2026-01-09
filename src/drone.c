@@ -30,12 +30,12 @@ void load_params_drone() {
 
 int main(int argc,char **argv){
     if(argc < 3){
-        logger_init();
+        logger_init("../logs");
         log_system("DRONE", "missing fds");
         return 1;
     }
 
-    logger_init();
+    logger_init("../logs");
     log_process_register("DRONE", getpid());
     log_system("DRONE", "started");
 

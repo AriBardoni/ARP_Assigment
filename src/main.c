@@ -3,17 +3,25 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <signal.h>
+#include <errno.h>
+#include <sys/select.h>
+#include <fcntl.h>
 #include "logger.h"
+#include "common.h"
 
 // Helper to immediately exit when something goes wrong
 static void die(const char *msg){
+    perror(msg);
     log_system("MAIN", msg);
-    _exit(1);
+    exit(1);
 }
 
 // Global PIDs for signal handler
-pid_t p_drone, p_input, p_obstacles, p_targets, p_blackboard, p_watchdog;
+pid_t p_drone = 0, p_input = 0, p_obstacles = 0, p_targets = 0, p_blackboard = 0, p_watchdog = 0, p_network = 0;
 
 void shutdown_handler(int sig) {
     (void)sig;
@@ -25,32 +33,22 @@ void shutdown_handler(int sig) {
     if (p_obstacles > 0) kill(p_obstacles, SIGKILL);
     if (p_targets > 0) kill(p_targets, SIGKILL);
     if (p_blackboard > 0) kill(p_blackboard, SIGKILL);
+    if (p_network > 0) kill(p_network, SIGKILL);
     if (p_watchdog > 0) kill(p_watchdog, SIGKILL);
 
     log_system("MAIN", "shutdown complete");
     exit(0);
 }
 
-int main() {
-    signal(SIGUSR1, shutdown_handler);
+// Struct to exchange dimensions
+typedef struct {
+    int w;
+    int h;
+} NetInitMsg;
 
-    logger_init();
-    log_process_register("MAIN", getpid());
-    log_system("MAIN", "started");
-
-    // Use current working directory as project path
-    char PATH[1024];
-    if (getcwd(PATH, sizeof(PATH)) == NULL) {
-        log_system("MAIN", "getcwd failed");
-        exit(1);
-    }
-
-    // aggiunta: usare la cartella bin
-    if (strlen(PATH) + 4 >= sizeof(PATH)) {
-        log_system("MAIN", "PATH too long");
-        exit(1);
-    }
-    strcat(PATH, "/bin");
+// --- ORIGINAL ASSIGNMENT 2 (LOCAL) ---
+void run_local(char *start_path) {
+    printf("Starting Local Mode (Assignment 2)...\n");
 
     // Pipes:
     // ItoB = input → blackboard
@@ -71,7 +69,7 @@ int main() {
     pid_t pw = fork();
     if (pw < 0) die("fork watchdog failed");
     if (pw == 0) {
-        chdir(PATH);
+        chdir(start_path);
         // Close unused
         close(ItoB[0]); close(ItoB[1]);
         close(BtoD[0]); close(BtoD[1]);
@@ -80,10 +78,8 @@ int main() {
         close(TtoB[0]); close(TtoB[1]);
 
         char wdPath[1024];
-        snprintf(wdPath, sizeof(wdPath), "%s/watchdog", PATH);
+        snprintf(wdPath, sizeof(wdPath), "%s/watchdog", start_path);
         execlp(wdPath, "watchdog", NULL);
-        // if execlp returns, it failed
-        // (child can log too, but we keep it minimal)
         _exit(1);
     }
     p_watchdog = pw;
@@ -96,7 +92,7 @@ int main() {
     if (p < 0) die("fork drone failed");
 
     if (p == 0) { // child: DRONE
-        chdir(PATH);
+        chdir(start_path);
         // Close all pipe ends not used in this process
         close(ItoB[0]); close(ItoB[1]);
         close(OtoB[0]); close(OtoB[1]);
@@ -110,7 +106,7 @@ int main() {
         snprintf(fdDtoB_w,16,"%d",DtoB[1]);
 
         char dronePath[1024];
-        snprintf(dronePath, sizeof(dronePath), "%s/drone", PATH);
+        snprintf(dronePath, sizeof(dronePath), "%s/drone", start_path);
 
         execlp(dronePath, "drone", fdBtoD_r, fdDtoB_w, wdPidStr, NULL);
         _exit(1);
@@ -121,7 +117,7 @@ int main() {
     if (p2 < 0) die("fork input failed");
 
     if (p2 == 0) { // child: INPUT
-        chdir(PATH);
+        chdir(start_path);
         // Close pipe ends not used by input
         close(ItoB[0]); // input writes to ItoB[1]
         close(BtoD[0]); close(BtoD[1]);
@@ -138,11 +134,11 @@ int main() {
         snprintf(fdItoB_w, 16, "%d", ItoB[1]);
 
         char inputPath[1024];
-        snprintf(inputPath, sizeof(inputPath), "%s/input", PATH);
+        snprintf(inputPath, sizeof(inputPath), "%s/input", start_path);
 
         char *argsI[] = {
             "konsole",
-            "--workdir", PATH,
+            "--workdir", start_path,
             "-e", inputPath, fdItoB_w, wdPidStr,
             NULL
         };
@@ -154,7 +150,7 @@ int main() {
     pid_t po = fork();
     if(po < 0) die("fork obstacles failed");
     if(po == 0){
-        chdir(PATH);
+        chdir(start_path);
         // close unused pipe ends
         close(ItoB[0]); close(ItoB[1]);
         close(BtoD[0]); close(BtoD[1]);
@@ -166,7 +162,7 @@ int main() {
         snprintf(fdOtoB_w, 16, "%d", OtoB[1]);
 
         char obstaclesPath[1024];
-        snprintf(obstaclesPath, sizeof(obstaclesPath), "%s/obstacles", PATH);
+        snprintf(obstaclesPath, sizeof(obstaclesPath), "%s/obstacles", start_path);
 
         execlp(obstaclesPath, "obstacles", fdOtoB_w, wdPidStr, NULL);
         _exit(1);
@@ -176,7 +172,7 @@ int main() {
     pid_t pt = fork();
     if(pt < 0) die("fork targets failed");
     if(pt == 0){
-        chdir(PATH);
+        chdir(start_path);
         // close unused pipe ends
         close(ItoB[0]); close(ItoB[1]);
         close(BtoD[0]); close(BtoD[1]);
@@ -188,7 +184,7 @@ int main() {
         snprintf(fdTtoB_w, 16, "%d", TtoB[1]);
 
         char targetsPath[1024];
-        snprintf(targetsPath, sizeof(targetsPath), "%s/targets", PATH);
+        snprintf(targetsPath, sizeof(targetsPath), "%s/targets", start_path);
 
         execlp(targetsPath, "targets", fdTtoB_w, wdPidStr, NULL);
         _exit(1);
@@ -205,7 +201,7 @@ int main() {
     if (p3 < 0) die("fork blackboard failed");
 
     if (p3 == 0) { // child:blackboard
-        chdir(PATH);
+        chdir(start_path);
 
         char fdItoB_r[16], fdBtoD_w[16], fdDtoB_r[16], fdOtoB_r[16], fdTtoB_r[16];
         snprintf(fdItoB_r,16,"%d",ItoB[0]);
@@ -215,11 +211,11 @@ int main() {
         snprintf(fdTtoB_r,16,"%d",TtoB[0]);
 
         char blackPath[1024];
-        snprintf(blackPath, sizeof(blackPath), "%s/blackboard", PATH);
+        snprintf(blackPath, sizeof(blackPath), "%s/blackboard", start_path);
 
         char *argsB[] = {
             "konsole",
-            "--workdir", PATH,
+            "--workdir", start_path,
             "-e",
             blackPath,
             fdItoB_r,
@@ -239,5 +235,328 @@ int main() {
     while(1) {
         pause();
     }
+}
+
+// --- NETWORK MODE (ASSIGNMENT 3) ---
+
+void run_network(char *start_path) {
+    int mode;
+    printf("Network Mode selected.\n1. Server\n2. Client\nChoose: ");
+    if(scanf("%d", &mode) != 1) exit(1);
+
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if(sockfd < 0) die("socket failed");
+    
+    // Enable address reuse
+    int opt = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+
+    int win_w = 0, win_h = 0;
+
+    int client_or_server_fd = -1;
+
+    if (mode == 1) { // SERVER
+        int port;
+        printf("Enter Port to listen on (e.g. 5000): ");
+        scanf("%d", &port);
+        printf("Enter Blackboard Dimensions (Columns Rows) (e.g. 80 24): ");
+        scanf("%d %d", &win_w, &win_h);
+
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(port);
+
+        if(bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) die("bind failed");
+        listen(sockfd, 1);
+        printf("Waiting for client on port %d...\n", port);
+
+        int clientfd = accept(sockfd, NULL, NULL);
+        if(clientfd < 0) die("accept failed");
+        printf("Client connected!\n");
+
+        // Send Dimensions
+        NetInitMsg init = { win_w, win_h };
+        send(clientfd, &init, sizeof(init), 0);
+
+        client_or_server_fd = clientfd;
+        // Don't need listening socket anymore? Keep it open or close depending on req. 
+        // Usually close listener if 1-to-1.
+        close(sockfd); 
+
+    } else { // CLIENT
+        char ip[64];
+        int port;
+        printf("Enter Server IP: ");
+        scanf("%s", ip);
+        printf("Enter Server Port: ");
+        scanf("%d", &port);
+
+        addr.sin_addr.s_addr = inet_addr(ip);
+        addr.sin_port = htons(port);
+
+        if(connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) die("connect failed");
+        printf("Connected to Server!\n");
+
+        // Receive Dimensions
+        NetInitMsg init;
+        recv(sockfd, &init, sizeof(init), 0);
+        printf("Received Dimensions: %d x %d\n", init.w, init.h);
+        
+        win_w = init.w;
+        win_h = init.h;
+        client_or_server_fd = sockfd;
+    }
+
+    // Now launch processes
+    
+    // Pipes
+    int ItoB[2], BtoD[2], DtoN[2], OtoB[2], TtoB[2]; 
+    // DtoN: Drone -> Network. Network writes to B via DtoB (which Drone uses in local mod... wait)
+    // Wait. Drone needs to write to Network. Network writes to Blackboard (Self Echo) AND sends to Remote.
+    // Drone -> Network (Pipe). Network -> Socket. Network -> Blackboard (Pipe).
+    // Drone Reads BtoD.
+    // Blackboard Reads ItoB, OtoB, and... DtoB? 
+    // Yes. Network process handles local drone state: reads it, sends to socket, AND writes it to Blackboard so it gets drawn.
+    // So we need a pipe Network -> Blackboard (DtoB equivalent). Let's call it NtoB_Drone.
+    
+    int NtoB_Drone[2]; 
+
+    if(pipe(ItoB)<0 || pipe(BtoD)<0 || pipe(DtoN)<0 || pipe(OtoB)<0 || pipe(TtoB)<0 || pipe(NtoB_Drone)<0)
+        die("pipe failed");
+
+    // Close TtoB immediately, unused in network mode (no targets)
+    close(TtoB[0]); close(TtoB[1]);
+
+    // Watchdog
+    pid_t pw = fork();
+    if (pw < 0) die("fork watchdog failed");
+    if (pw == 0) {
+        chdir(start_path);
+        // Close unused
+        close(ItoB[0]); close(ItoB[1]);
+        close(BtoD[0]); close(BtoD[1]);
+        close(DtoN[0]); close(DtoN[1]);
+        close(OtoB[0]); close(OtoB[1]);
+        close(NtoB_Drone[0]); close(NtoB_Drone[1]);
+        close(client_or_server_fd);
+
+        char wdPath[1024];
+        snprintf(wdPath, sizeof(wdPath), "%s/watchdog", start_path);
+        execlp(wdPath, "watchdog", NULL);
+        _exit(1);
+    }
+    p_watchdog = pw;
+
+    char wdPidStr[16];
+    snprintf(wdPidStr, 16, "%d", p_watchdog);
+
+    // Drone
+    pid_t p = fork();
+    if(p < 0) die("fork drone failed");
+    if(p==0){
+        chdir(start_path);
+        
+        // Drone writes to DtoN[1] 
+        // Drone Reads BtoD[0]
+        close(ItoB[0]); close(ItoB[1]);
+        close(OtoB[0]); close(OtoB[1]);
+        close(BtoD[1]); 
+        close(NtoB_Drone[0]); close(NtoB_Drone[1]);
+        close(DtoN[0]); 
+        close(client_or_server_fd);
+
+        char fdBtoD_r[16], fdDtoN_w[16];
+        snprintf(fdBtoD_r,16,"%d",BtoD[0]);
+        snprintf(fdDtoN_w,16,"%d",DtoN[1]);
+
+        char dronePath[1024];
+        snprintf(dronePath,sizeof(dronePath),"%s/drone", start_path);
+        execlp(dronePath, "drone", fdBtoD_r, fdDtoN_w, wdPidStr, NULL);
+        _exit(1);
+    }
+    p_drone = p;
+
+    // Network Process
+    pid_t pn = fork();
+    if (pn < 0) die("fork network failed");
+    if (pn == 0) {
+        chdir(start_path);
+        
+        // Network reads DtoN[0]
+        // Network writes NtoB_Drone[1] (Local Drone Echo) - Wait, do we need this? 
+        // In local: Drone -> DtoB -> Blackboard.
+        // In network: Drone -> DtoN -> Network -> [Socket] AND [Blackboard]
+        // Currently Network.c writes to socket. But what about blackboard?
+        // Ah, in previous logic Main did: read DtoM, write DtoB.
+        // So Network must write to NtoB_Drone[1] which BB reads as DtoB.
+        // AND Network writes to OtoB[1] (from Remote).
+        
+        close(ItoB[0]); close(ItoB[1]);
+        close(BtoD[0]); close(BtoD[1]);
+        close(DtoN[1]); // Write side
+        close(NtoB_Drone[0]); // Read side
+        close(OtoB[0]); // Read side
+        
+        // Actually, my Network.c code implementation: 
+        //  FD_SET(MySocket, &rs);
+        //  FD_SET(fdDtoN_r, &rs);
+        //  if (FD_ISSET(fdDtoN_r, &rs)) { read; send(MySocket); }  <-- MISSING ECHO TO BLACKBOARD!
+        // I need to update Network.c to echo to Blackboard!
+        // Wait, I can pass NtoB_Drone[1] to Network as an argument.
+        // But let's check my Network.c implementation again.
+        
+        // My Network.c implementation had:
+        // int fdDtoN_r = atoi(argv[2]);
+        // int fdOtoB_w = atoi(argv[3]);
+        // It does NOT have an argument for ECHO to Blackboard.
+        // I must update Network.c first or pass it differently.
+        
+        // Correction: I should pass NtoB_Drone[1] to Network indeed.
+        // Let's assume I will fix Network.c in next step or now.
+        // I will pass it as argument 5?
+        
+        // For now let's construct arguments.
+        char sfd[16], fdD_r[16], fdO_w[16], fdSelf_w[16], winW_str[16], winH_str[16], role_str[16];
+        snprintf(sfd, 16, "%d", client_or_server_fd);
+        snprintf(fdD_r, 16, "%d", DtoN[0]);
+        snprintf(fdO_w, 16, "%d", OtoB[1]);
+        snprintf(fdSelf_w, 16, "%d", NtoB_Drone[1]);
+        snprintf(winW_str, 16, "%d", win_w);
+        snprintf(winH_str, 16, "%d", win_h);
+        snprintf(role_str, 16, "%d", (mode == 1));
+
+        char netPath[1024];
+        snprintf(netPath, sizeof(netPath), "%s/network", start_path);
+        
+        execlp(netPath, "network", sfd, fdD_r, fdO_w, wdPidStr, fdSelf_w, winW_str, winH_str, role_str, NULL);
+        _exit(1);
+    }
+    p_network = pn;
+
+    // Input
+    pid_t p2 = fork();
+    if(p2 < 0) die("fork input failed");
+    if(p2==0){
+        chdir(start_path);
+        close(ItoB[0]); 
+        close(BtoD[0]); close(BtoD[1]);
+        close(DtoN[0]); close(DtoN[1]);
+        close(OtoB[0]); close(OtoB[1]);
+        close(NtoB_Drone[0]); close(NtoB_Drone[1]);
+        close(client_or_server_fd);
+        
+        char fdItoB_w[16];
+        snprintf(fdItoB_w, 16, "%d", ItoB[1]);
+        char inputPath[1024];
+        snprintf(inputPath,sizeof(inputPath),"%s/input", start_path);
+        
+        char *argsI[] = {"konsole", "--workdir", start_path, "-e", inputPath, fdItoB_w, wdPidStr, NULL};
+        execvp("konsole", argsI);
+        _exit(1);
+    }
+    p_input = p2;
+
+    // Blackboard
+    pid_t p3 = fork();
+    if(p3 < 0) die("fork blackboard failed");
+    if(p3==0){
+        chdir(start_path);
+        
+        // Blackboard reads: ItoB[0], NtoB_Drone[0] (as DtoB), OtoB[0], TtoB[0] (closed)
+        char fdItoB_r[16], fdBtoD_w[16], fdDtoB_r[16], fdOtoB_r[16], fdTtoB_r[16] = "-1";
+        snprintf(fdItoB_r,16,"%d",ItoB[0]);
+        snprintf(fdBtoD_w,16,"%d",BtoD[1]);
+        snprintf(fdDtoB_r,16,"%d",NtoB_Drone[0]);
+        snprintf(fdOtoB_r,16,"%d",OtoB[0]);
+        
+        close(client_or_server_fd);
+        
+        char blackPath[1024];
+        snprintf(blackPath,sizeof(blackPath),"%s/blackboard", start_path);
+        
+        char *argsB[] = {
+            "konsole",
+            NULL, NULL, // Allocating space for geom args
+            "--workdir", start_path, 
+            "-e", blackPath,
+            fdItoB_r, fdBtoD_w, fdDtoB_r, fdOtoB_r, fdTtoB_r, wdPidStr, 
+            NULL
+        };
+        
+        // Manually handling dynamic args
+        if (win_w > 0 && win_h > 0) {
+             char geom[32];
+             snprintf(geom, sizeof(geom), "%dx%d", win_w, win_h);
+             argsB[1] = "--qwindowgeometry";
+             argsB[2] = geom;
+        } else {
+            // Shift array if no geom
+            argsB[1] = argsB[3]; // --workdir
+            argsB[2] = argsB[4]; // path
+            argsB[3] = argsB[5]; // -e
+            argsB[4] = argsB[6]; // blackPath
+            argsB[5] = argsB[7]; // ...
+            argsB[6] = argsB[8]; 
+            argsB[7] = argsB[9]; 
+            argsB[8] = argsB[10]; 
+            argsB[9] = argsB[11];
+            argsB[10] = argsB[12];
+            argsB[11] = NULL;
+        }
+        
+        execvp("konsole", argsB);
+        _exit(1);
+    }
+    p_blackboard = p3;
+
+    // Parent closes all
+    close(ItoB[0]); close(ItoB[1]);
+    close(BtoD[0]); close(BtoD[1]);
+    close(DtoN[0]); close(DtoN[1]);
+    close(OtoB[0]); close(OtoB[1]);
+    close(NtoB_Drone[0]); close(NtoB_Drone[1]);
+    close(client_or_server_fd);
+
+    while(1) {
+        pause();
+    }
+}
+
+int main() {
+    signal(SIGUSR1, shutdown_handler);
+
+    logger_init("logs");
+    log_process_register("MAIN", getpid());
+    log_system("MAIN", "started");
+
+    // Use current working directory as project path
+    char PATH[1024];
+    if (getcwd(PATH, sizeof(PATH)) == NULL) {
+        log_system("MAIN", "getcwd failed");
+        exit(1);
+    }
+
+    // aggiunta: usare la cartella bin
+    if (strlen(PATH) + 4 >= sizeof(PATH)) {
+        log_system("MAIN", "PATH too long");
+        exit(1);
+    }
+    strcat(PATH, "/bin");
+    
+    int choice;
+    printf("Select Mode:\n1. Standalone (Assignment 2)\n2. Networked (Assignment 3)\n> ");
+    if(scanf("%d", &choice) != 1) return 1;
+
+    if(choice == 1) {
+        run_local(PATH);
+    } else if (choice == 2) {
+        run_network(PATH);
+    } else {
+        printf("Invalid choice\n");
+    }
+
     return 0;
 }

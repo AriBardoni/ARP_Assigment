@@ -16,7 +16,7 @@
 int main(int argc, char **argv) {
     (void)argc; (void)argv; // Unused
 
-    logger_init();
+    logger_init("../logs");
     log_process_register("WATCHDOG", getpid());
     log_system("WATCHDOG", "started");
 
@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
     }
 
     const char *proc_names[PROCESS_COUNT] = {
-        "Drone", "Input", "Blackboard", "Obstacles", "Targets"
+        "Drone", "Input", "Blackboard", "Obstacles", "Targets", "Network"
     };
 
     printf("Watchdog started. Monitoring %d processes via signals.\n", PROCESS_COUNT);
@@ -67,6 +67,7 @@ int main(int argc, char **argv) {
                 char msg[256];
                 snprintf(msg, sizeof(msg), "Process %s executing Area %d", proc_names[proc_id], area_id);
                 log_message("LogFile1", "Watchdog", msg);
+                printf("Watchdog: %s\n", msg);
             } else {
                 log_system("WATCHDOG", "received invalid process id");
             }

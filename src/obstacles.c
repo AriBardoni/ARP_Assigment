@@ -22,7 +22,7 @@ int main(int argc, char **argv){
         return 1;
     }
 
-    logger_init();
+    logger_init("../logs");
     log_process_register("OBSTACLES", getpid());
     log_system("OBSTACLES", "started");
 

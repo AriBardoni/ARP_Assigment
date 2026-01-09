@@ -6,10 +6,9 @@
 #include <stdarg.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#define LOG_DIR "/home/ertoto/Documenti/GitHub/ARP_Assigment/logs"
-#define SYSTEM_LOG   LOG_DIR "/system.log"
-#define WATCHDOG_LOG LOG_DIR "/watchdog.log"
-#define PROCESS_LOG  LOG_DIR "/processes.log"
+#include <string.h>
+
+static char LOG_DIR[512] = "logs";
 
 static long now_ms(void) {
     struct timespec ts;
@@ -27,9 +26,16 @@ static void locked_write(FILE *f, const char *fmt, ...) {
     flock(fileno(f), LOCK_UN);
 }
 
+static void get_log_path(char *buf, size_t size, const char *filename) {
+    snprintf(buf, size, "%s/%s", LOG_DIR, filename);
+}
+
 /* -------- public API -------- */
 
-void logger_init(void) {
+void logger_init(const char *path) {
+    if (path) {
+        snprintf(LOG_DIR, sizeof(LOG_DIR), "%s", path);
+    }
     struct stat st = {0};
     if (stat(LOG_DIR, &st) == -1) {
         mkdir(LOG_DIR, 0700);
@@ -37,7 +43,10 @@ void logger_init(void) {
 }
 
 void log_process_register(const char *proc, pid_t pid) {
-    FILE *f = fopen(PROCESS_LOG, "a");
+    char path[512];
+    get_log_path(path, sizeof(path), "processes.log");
+    
+    FILE *f = fopen(path, "a");
     if (!f) return;
 
     locked_write(f, "[%ld] %s %d\n", now_ms(), proc, pid);
@@ -45,7 +54,10 @@ void log_process_register(const char *proc, pid_t pid) {
 }
 
 void log_system(const char *proc, const char *fmt, ...) {
-    FILE *f = fopen(SYSTEM_LOG, "a");
+    char path[512];
+    get_log_path(path, sizeof(path), "system.log");
+    
+    FILE *f = fopen(path, "a");
     if (!f) return;
 
     flock(fileno(f), LOCK_EX);
@@ -63,7 +75,10 @@ void log_system(const char *proc, const char *fmt, ...) {
 }
 
 void log_watchdog(const char *fmt, ...) {
-    FILE *f = fopen(WATCHDOG_LOG, "a");
+    char path[512];
+    get_log_path(path, sizeof(path), "watchdog.log");
+
+    FILE *f = fopen(path, "a");
     if (!f) return;
 
     flock(fileno(f), LOCK_EX);
@@ -81,7 +96,10 @@ void log_watchdog(const char *fmt, ...) {
 }
 
 void log_message(const char *logfile, const char *proc_name, const char *msg) {
-    FILE *f = fopen(logfile, "a");
+    char path[512];
+    get_log_path(path, sizeof(path), logfile);
+
+    FILE *f = fopen(path, "a");
     if (!f) return;
 
     locked_write(f, "[%ld] %s %s\n", now_ms(), proc_name, msg);

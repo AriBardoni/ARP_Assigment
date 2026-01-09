@@ -18,12 +18,12 @@ static double now_sec(void) {
 
 int main(int argc, char **argv){
     if(argc < 3){
-        logger_init();
+        logger_init("../logs");
         log_system("TARGETS", "missing fd");
         return 1;
     }
 
-    logger_init();
+    logger_init("../logs");
     log_process_register("TARGETS", getpid());
     log_system("TARGETS", "started");
 

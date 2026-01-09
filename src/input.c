@@ -15,7 +15,7 @@ int main(int argc, char **argv){
         return 1;
     }
 
-    logger_init();
+    logger_init("../logs");
     log_process_register("INPUT", getpid());
     log_system("INPUT", "started");
 
