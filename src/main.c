@@ -282,8 +282,6 @@ void run_network(char *start_path) {
         send(clientfd, &init, sizeof(init), 0);
 
         client_or_server_fd = clientfd;
-        // Don't need listening socket anymore? Keep it open or close depending on req. 
-        // Usually close listener if 1-to-1.
         close(sockfd); 
 
     } else { // CLIENT
@@ -314,20 +312,12 @@ void run_network(char *start_path) {
     
     // Pipes
     int ItoB[2], BtoD[2], DtoN[2], OtoB[2], TtoB[2]; 
-    // DtoN: Drone -> Network. Network writes to B via DtoB (which Drone uses in local mod... wait)
-    // Wait. Drone needs to write to Network. Network writes to Blackboard (Self Echo) AND sends to Remote.
-    // Drone -> Network (Pipe). Network -> Socket. Network -> Blackboard (Pipe).
-    // Drone Reads BtoD.
-    // Blackboard Reads ItoB, OtoB, and... DtoB? 
-    // Yes. Network process handles local drone state: reads it, sends to socket, AND writes it to Blackboard so it gets drawn.
-    // So we need a pipe Network -> Blackboard (DtoB equivalent). Let's call it NtoB_Drone.
     
     int NtoB_Drone[2]; 
 
     if(pipe(ItoB)<0 || pipe(BtoD)<0 || pipe(DtoN)<0 || pipe(OtoB)<0 || pipe(TtoB)<0 || pipe(NtoB_Drone)<0)
         die("pipe failed");
 
-    // Close TtoB immediately, unused in network mode (no targets)
     close(TtoB[0]); close(TtoB[1]);
 
     // Watchdog
@@ -359,8 +349,6 @@ void run_network(char *start_path) {
     if(p==0){
         chdir(start_path);
         
-        // Drone writes to DtoN[1] 
-        // Drone Reads BtoD[0]
         close(ItoB[0]); close(ItoB[1]);
         close(OtoB[0]); close(OtoB[1]);
         close(BtoD[1]); 
@@ -384,41 +372,13 @@ void run_network(char *start_path) {
     if (pn < 0) die("fork network failed");
     if (pn == 0) {
         chdir(start_path);
-        
-        // Network reads DtoN[0]
-        // Network writes NtoB_Drone[1] (Local Drone Echo) - Wait, do we need this? 
-        // In local: Drone -> DtoB -> Blackboard.
-        // In network: Drone -> DtoN -> Network -> [Socket] AND [Blackboard]
-        // Currently Network.c writes to socket. But what about blackboard?
-        // Ah, in previous logic Main did: read DtoM, write DtoB.
-        // So Network must write to NtoB_Drone[1] which BB reads as DtoB.
-        // AND Network writes to OtoB[1] (from Remote).
-        
+                
         close(ItoB[0]); close(ItoB[1]);
         close(BtoD[0]); close(BtoD[1]);
         close(DtoN[1]); // Write side
         close(NtoB_Drone[0]); // Read side
         close(OtoB[0]); // Read side
         
-        // Actually, my Network.c code implementation: 
-        //  FD_SET(MySocket, &rs);
-        //  FD_SET(fdDtoN_r, &rs);
-        //  if (FD_ISSET(fdDtoN_r, &rs)) { read; send(MySocket); }  <-- MISSING ECHO TO BLACKBOARD!
-        // I need to update Network.c to echo to Blackboard!
-        // Wait, I can pass NtoB_Drone[1] to Network as an argument.
-        // But let's check my Network.c implementation again.
-        
-        // My Network.c implementation had:
-        // int fdDtoN_r = atoi(argv[2]);
-        // int fdOtoB_w = atoi(argv[3]);
-        // It does NOT have an argument for ECHO to Blackboard.
-        // I must update Network.c first or pass it differently.
-        
-        // Correction: I should pass NtoB_Drone[1] to Network indeed.
-        // Let's assume I will fix Network.c in next step or now.
-        // I will pass it as argument 5?
-        
-        // For now let's construct arguments.
         char sfd[16], fdD_r[16], fdO_w[16], fdSelf_w[16], winW_str[16], winH_str[16], role_str[16];
         snprintf(sfd, 16, "%d", client_or_server_fd);
         snprintf(fdD_r, 16, "%d", DtoN[0]);
@@ -547,15 +507,18 @@ int main() {
     strcat(PATH, "/bin");
     
     int choice;
-    printf("Select Mode:\n1. Standalone (Assignment 2)\n2. Networked (Assignment 3)\n> ");
+    printf("Select Mode:\n1. Standalone\n2. Networked\n3. Quit: q\n");
     if(scanf("%d", &choice) != 1) return 1;
 
     if(choice == 1) {
         run_local(PATH);
     } else if (choice == 2) {
         run_network(PATH);
+    } else if (choice == 3) {
+        exit(0);
     } else {
         printf("Invalid choice\n");
+        exit(1);
     }
 
     return 0;
