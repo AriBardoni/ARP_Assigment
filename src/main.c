@@ -510,15 +510,15 @@ int main() {
     printf("Select Mode:\n1. Standalone\n2. Networked\n3. Quit: q\n");
     if(scanf("%d", &choice) != 1) return 1;
 
-    if(choice == 1) {
-        run_local(PATH);
-    } else if (choice == 2) {
-        run_network(PATH);
-    } else if (choice == 3) {
-        exit(0);
-    } else {
-        printf("Invalid choice\n");
-        exit(1);
+    while(choice != 3) {
+        if(choice == 1) {
+            run_local(PATH);
+        } else if (choice == 2) {
+            run_network(PATH);
+        }
+        printf("Invalid choice. Please try again.\n");
+        printf("Select Mode:\n1. Standalone\n2. Networked\n3. Quit: q\n");
+        if(scanf("%d", &choice) != 1) return 1;
     }
 
     return 0;
