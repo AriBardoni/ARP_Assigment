@@ -508,7 +508,10 @@ int main() {
     
     int choice;
     printf("Select Mode:\n1. Standalone\n2. Networked\n3. Quit: q\n");
-    if(scanf("%d", &choice) != 1) return 1;
+    if(scanf("%d", &choice) != 1){
+        printf("Invalid choice. Shutting down\n");
+        return 1;
+    }
 
     while(choice != 3) {
         if(choice == 1) {
@@ -518,7 +521,10 @@ int main() {
         }
         printf("Invalid choice. Please try again.\n");
         printf("Select Mode:\n1. Standalone\n2. Networked\n3. Quit: q\n");
-        if(scanf("%d", &choice) != 1) return 1;
+        if(scanf("%d", &choice) != 1){
+            printf("Invalid choice. Shutting down\n");
+            return 1;
+        }
     }
 
     return 0;
