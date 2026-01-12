@@ -17,8 +17,6 @@ int MySocket = -1;
 void cleanup(int sig) {
     (void)sig;
     if (MySocket != -1) {
-        /* If we are in the loop, we might want to send "Q" but 
-           for SIGINT force close is reasonable. */
         close(MySocket);
     }
     log_system("NETWORK", "exiting");
@@ -27,15 +25,10 @@ void cleanup(int sig) {
 
 // Helpers for Protocol
 void send_msg(int sock, const char *msg) {
-    // Send string + null terminator? 
-    // "The following words in capital ... are messages transmitted as strings"
-    // Usually implies string including null or fixed size. Pseudocode "snd OK" -> send("OK", 3)
     send(sock, msg, strlen(msg) + 1, 0); 
 }
 
 void recv_msg(int sock, char *buf, size_t size) {
-    // Simple receive, assumes we get the whole string packet or enough to parse
-    // For robust TCP we should frame, but for assignment simple recv is likely expected.
     memset(buf, 0, size);
     recv(sock, buf, size, 0);
 }
@@ -67,34 +60,11 @@ int main(int argc, char **argv) {
 
     float last_local_x = 0.0f, last_local_y = 0.0f;
     int counter = 0;
-
-    // Determine Role based on logic from Main? 
-    // Main doesn't explicitly tell us Server vs Client role via arg, BUT 
-    // we can deduce or Main should pass it. 
-    // Wait, Main does NOT pass role. I need to know if Server or Client.
-    // However, I can infer it? No.
-    // I should have added role to arguments.
-    // Actually, looking at main.c: "NetInitMsg" exchange happens in Main.
-    // If I am Server, I accepted a socket. If Client, I connected.
-    // The Protocol spec says Server sends OK first. Client receives OK.
-    // Failure to identify role means I can't implement the spec.
-    // I will check if I can assume role from something else or update Main again.
-    
-    // UPDATE: I'll assume I need to handle role. 
-    // Let's deduce role: Server 'binds', Client 'connects'. 
-    // In Main, both result in a connected socket passed here.
-    // I WILL UPDATE MAIN TO PASS ROLE AS ARG 8.
-    
-    // TEMPORARY FIX: Since I can't update Main in this 'write_to_file' call without
-    // potentially breaking sync, I will assume arg 8 exists or I will fail.
-    // Let's assume I will update main in next step to pass role.
     
     int is_server = 0; 
     if (argc >= 9) {
         is_server = atoi(argv[8]);
     } else {
-        // Fallback/Hack: Try to peek? No.
-        // I must update Main. For now code assumes arg 8.
         is_server = 0; 
     }
 
@@ -126,8 +96,6 @@ int main(int argc, char **argv) {
             while(read(fdDtoN_r, &local_state, sizeof(local_state)) > 0) {
                 last_local_x = local_state.x;
                 last_local_y = local_state.y;
-                // Echo to Blackboard immediately? Or wait? 
-                // Plan said: Updates Blackboard (Echo local drone).
                 write(fdNtoB_Drone_w, &local_state, sizeof(local_state));
             }
 
@@ -156,29 +124,16 @@ int main(int argc, char **argv) {
             }
             
             send_msg(MySocket, "POK");
-
-            // snd Q; rcv QOK; exit (Conditional)
-            // User said "Conditional". Meaning if we want to quit.
-            // How do we know if we want to quit? 
-            // Maybe if watchdog signal or parent signal? 
-            // For now, we don't trigger quit actively in loop unless signaled.
-            // Pseudocode implies we Send Q *if* we exit.
-            // But strict pseudocode was "snd Q...". 
-            // If it's conditional, we skip it unless splitting.
             
             // Watchdog Update
             counter++;
-            if (counter >= 20) { // faster loop? No delay?
-                // Sequential loop is blocking on recv! 
-                // So heartbeat freq depends on network latency.
-                // We should send heartbeat every iteration to be safe.
+            if (counter >= 20) {
                 union sigval value;
                 value.sival_int = PROCESS_NETWORK | (AREA_COMPUTE << 8); 
                 sigqueue(wd_pid, SIGUSR1, value);
                 counter = 0;
             }
             
-            // Optional delay? 
             usleep(20000); // 20ms to prevent spamming if compiled locally fast
         }
         
@@ -191,8 +146,7 @@ int main(int argc, char **argv) {
         send_msg(MySocket, "OK");
 
         // 2. rcv SIZE l,h; sn OK <size>;
-        recv_msg(MySocket, buf, sizeof(buf)); // SIZE ...
-        // Parse size if needed, but we used args.
+        recv_msg(MySocket, buf, sizeof(buf)); // SIZE
         send_msg(MySocket, "OK SIZE");
 
         // 3. Loop
