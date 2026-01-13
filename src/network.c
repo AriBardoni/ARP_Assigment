@@ -78,13 +78,13 @@ int main(int argc, char **argv) {
         log_system("NETWORK", "Starting Server Protocol");
 
         // 1. snd OK; rcv OK;
-        send_msg(MySocket, "OK");
+        send_msg(MySocket, "ok");
         recv_msg(MySocket, buf, sizeof(buf)); 
         // Expect "OK"
         
         // 2. sn SIZE l,h; rcv OK <size>;
         char size_msg[64];
-        snprintf(size_msg, sizeof(size_msg), "SIZE %d,%d", win_w, win_h);
+        snprintf(size_msg, sizeof(size_msg), "size %d,%d", win_w, win_h);
         send_msg(MySocket, size_msg);
         recv_msg(MySocket, buf, sizeof(buf));
         // Expect "OK <size>" (unused for now, acting as ack)
@@ -100,7 +100,7 @@ int main(int argc, char **argv) {
             }
 
             // snd DRONE; snd x,y; rcv DOK <drone>
-            send_msg(MySocket, "DRONE");
+            send_msg(MySocket, "drone");
             
             char pos_msg[64];
             snprintf(pos_msg, sizeof(pos_msg), "%f,%f", last_local_x, last_local_y);
@@ -109,7 +109,7 @@ int main(int argc, char **argv) {
             recv_msg(MySocket, buf, sizeof(buf)); // DOK ...
 
             // snd OBST; rcv x,y; snd POK <obstacle>
-            send_msg(MySocket, "OBST");
+            send_msg(MySocket, "obst");
             
             recv_msg(MySocket, buf, sizeof(buf)); // Receive "x,y" from remote
             float rx, ry;
@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
                 write(fdOtoB_w, &om, sizeof(om));
             }
             
-            send_msg(MySocket, "POK");
+            send_msg(MySocket, "pok");
             
             // Watchdog Update
             counter++;
@@ -145,11 +145,11 @@ int main(int argc, char **argv) {
 
         // 1. rcv OK; snd OK;
         recv_msg(MySocket, buf, sizeof(buf)); // OK
-        send_msg(MySocket, "OK");
+        send_msg(MySocket, "ok");
 
         // 2. rcv SIZE l,h; sn OK <size>;
         recv_msg(MySocket, buf, sizeof(buf)); // SIZE
-        send_msg(MySocket, "OK SIZE");
+        send_msg(MySocket, "ok size");
 
         // 3. Loop
         while (1) {
@@ -163,8 +163,8 @@ int main(int argc, char **argv) {
 
             // rcv DRONE; rcv x,y; snd DOK <drone>
             recv_msg(MySocket, buf, sizeof(buf)); // DRONE check?
-            if (strcmp(buf, "Q") == 0) {
-                 send_msg(MySocket, "QOK");
+            if (strcmp(buf, "q") == 0) {
+                 send_msg(MySocket, "qok");
                  break; // Server Quit
             }
             
@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
                 om.y = ry;
                 write(fdOtoB_w, &om, sizeof(om));
             }
-            send_msg(MySocket, "DOK");
+            send_msg(MySocket, "dok");
 
             // rcv OBST; snd x,y; rcv POK <obstacle>
             recv_msg(MySocket, buf, sizeof(buf)); // OBST
