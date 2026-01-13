@@ -345,9 +345,9 @@ void run_network(char *start_path) {
     // Performance: Disable Nagle (TCP_NODELAY)
     setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
 
-    // Robustness: Receive Timeout
-    struct timeval tv = {5, 0}; // 5s timeout
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    // Robustness: Receive Timeout removed for listening socket to avoid accept errors
+    // struct timeval tv = {5, 0}; // 5s timeout
+    // setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
