@@ -304,6 +304,30 @@ pid_t spawn_blackboard(char *start_path, char *wdPidStr, int socket_fd,
     return p;
 }
 
+// Helper to spawn Watchdog for Network Mode
+pid_t spawn_watchdog_network(char *start_path, int socket_fd, 
+                             int *ItoB, int *BtoD, int *DtoN, int *OtoB, int *NtoB_Drone, int *BtoM) {
+    pid_t pw = fork();
+    if (pw < 0) die("fork watchdog failed");
+    if (pw == 0) {
+        chdir(start_path);
+        // Close unused
+        close(ItoB[0]); close(ItoB[1]);
+        close(BtoD[0]); close(BtoD[1]);
+        close(DtoN[0]); close(DtoN[1]);
+        close(OtoB[0]); close(OtoB[1]);
+        close(NtoB_Drone[0]); close(NtoB_Drone[1]);
+        close(BtoM[0]); close(BtoM[1]);
+        if (socket_fd >= 0) close(socket_fd);
+        
+        char wdPath[1024];
+        snprintf(wdPath, sizeof(wdPath), "%s/watchdog", start_path);
+        execlp(wdPath, "watchdog", NULL);
+        _exit(1);
+    }
+    return pw;
+}
+
 // --- NETWORK MODE (ASSIGNMENT 3) ---
 
 void run_network(char *start_path) {
@@ -349,29 +373,10 @@ void run_network(char *start_path) {
     // Targets ununsed in network mode
     close(TtoB[0]); close(TtoB[1]);
 
-    // Watchdog
-    pid_t pw = fork();
-    if (pw < 0) die("fork watchdog failed");
-    if (pw == 0) {
-        chdir(start_path);
-        // Close unused
-        close(ItoB[0]); close(ItoB[1]);
-        close(BtoD[0]); close(BtoD[1]);
-        close(DtoN[0]); close(DtoN[1]);
-        close(OtoB[0]); close(OtoB[1]);
-        close(NtoB_Drone[0]); close(NtoB_Drone[1]);
-        close(BtoM[0]); close(BtoM[1]);
-        close(sockfd);
-        
-        char wdPath[1024];
-        snprintf(wdPath, sizeof(wdPath), "%s/watchdog", start_path);
-        execlp(wdPath, "watchdog", NULL);
-        _exit(1);
-    }
-    p_watchdog = pw;
-
+    // Watchdog logic moved to Server/Client blocks
+    p_watchdog = 0;
     char wdPidStr[16];
-    snprintf(wdPidStr, 16, "%d", p_watchdog);
+    snprintf(wdPidStr, 16, "0"); // Default to 0 (disabled) until started
 
     if (mode == 1) { // SERVER
         int port;
@@ -394,6 +399,11 @@ void run_network(char *start_path) {
         
         client_or_server_fd = clientfd;
         close(sockfd); 
+
+        // Start Watchdog AFTER connection established
+        p_watchdog = spawn_watchdog_network(start_path, client_or_server_fd,
+                                            ItoB, BtoD, DtoN, OtoB, NtoB_Drone, BtoM);
+        snprintf(wdPidStr, 16, "%d", p_watchdog); 
 
         // Fork Blackboard NOW to get dimensions
         p_blackboard = spawn_blackboard(start_path, wdPidStr, client_or_server_fd,
@@ -440,8 +450,11 @@ void run_network(char *start_path) {
         printf("Received Dimensions: %d x %d\n", init.w, init.h);
         
         win_w = init.w;
-        win_h = init.h;
         client_or_server_fd = sockfd;
+
+        // Watchdog DISABLED in Client mode (p_watchdog = 0)
+        p_watchdog = 0;
+        snprintf(wdPidStr, 16, "0");
 
         // Fork Blackboard
         p_blackboard = spawn_blackboard(start_path, wdPidStr, client_or_server_fd,

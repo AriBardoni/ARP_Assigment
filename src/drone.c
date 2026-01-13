@@ -101,7 +101,9 @@ int main(int argc,char **argv){
         if (counter >= 10) {
             union sigval value;
             value.sival_int = PROCESS_DRONE | (AREA_COMPUTE << 8);
-            sigqueue(wd_pid, SIGUSR1, value);
+            if (wd_pid > 0) {
+                sigqueue(wd_pid, SIGUSR1, value);
+            }
             counter = 0;
         }
 

@@ -63,7 +63,9 @@ int main(int argc, char **argv){
         if (counter >= 10) { // 100ms * 10 = 1s
             union sigval value;
             value.sival_int = PROCESS_OBSTACLES | (AREA_SPAWN << 8);
-            sigqueue(wd_pid, SIGUSR1, value);
+            if (wd_pid > 0) {
+                sigqueue(wd_pid, SIGUSR1, value);
+            }
             counter = 0;
         }
     }

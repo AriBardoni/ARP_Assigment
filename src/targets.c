@@ -64,7 +64,9 @@ int main(int argc, char **argv){
         if (counter >= 50) {
             union sigval value;
             value.sival_int = PROCESS_TARGETS | (AREA_SPAWN << 8);
-            sigqueue(wd_pid, SIGUSR1, value);
+            if (wd_pid > 0) {
+                sigqueue(wd_pid, SIGUSR1, value);
+            }
             counter = 0;
         }
     }

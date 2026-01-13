@@ -130,7 +130,9 @@ int main(int argc, char **argv){
         if (counter >= 20) { // 20 * 50ms = 1s
             union sigval value;
             value.sival_int = PROCESS_INPUT | (AREA_WAIT_INPUT << 8);
-            sigqueue(wd_pid, SIGUSR1, value);
+            if (wd_pid > 0) {
+                sigqueue(wd_pid, SIGUSR1, value);
+            }
             counter = 0;
         }
     }

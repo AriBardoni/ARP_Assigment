@@ -630,7 +630,9 @@ int main(int argc,char **argv){
         if (counter >= 50) { // 50 * 20ms = 1s
             union sigval value;
             value.sival_int = PROCESS_BLACKBOARD | (AREA_UPDATE_MAP << 8);
-            sigqueue(wd_pid, SIGUSR1, value);
+            if (wd_pid > 0) {
+                sigqueue(wd_pid, SIGUSR1, value);
+            }
             counter = 0;
         }
     }
