@@ -6,6 +6,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
+#include <sys/time.h>
 #include <signal.h>
 #include <errno.h>
 #include <sys/select.h>
@@ -181,7 +183,7 @@ void run_local(char *start_path) {
         close(TtoB[0]); // write only
 
         char fdTtoB_w[16];
-        snprintf(fdTtoB_w, 16, "%d", TtoB[1]);
+        snprintf(fdTtoB_w, 16, "%d", TtoB[1]);a
 
         char targetsPath[1024];
         snprintf(targetsPath, sizeof(targetsPath), "%s/targets", start_path);
@@ -224,6 +226,7 @@ void run_local(char *start_path) {
             fdOtoB_r,
             fdTtoB_r,
             wdPidStr,
+            "-1",
             NULL
         };
 
@@ -235,6 +238,70 @@ void run_local(char *start_path) {
     while(1) {
         pause();
     }
+}
+
+// Helper to spawn Blackboard (Deduplicated)
+pid_t spawn_blackboard(char *start_path, char *wdPidStr, int socket_fd, 
+                       int *ItoB, int *BtoD, int *DtoN, int *OtoB, int *NtoB_Drone, int *BtoM,
+                       int is_server, int win_w, int win_h) {
+    pid_t p = fork();
+    if (p < 0) die("fork blackboard failed");
+    if (p == 0) {
+        chdir(start_path);
+        
+        // Close ends
+        if (socket_fd >= 0) close(socket_fd);
+        close(ItoB[1]);
+        close(BtoD[0]);
+        close(DtoN[0]); close(DtoN[1]);
+        close(OtoB[1]);
+        close(NtoB_Drone[1]);
+        close(BtoM[0]); // Always close read end
+        
+        char fM[16] = "-1";
+        if(is_server) {
+            snprintf(fM, 16, "%d", BtoM[1]);
+        } else {
+            close(BtoM[1]);
+        }
+
+        char fI[16], fB[16], fD[16], fO[16];
+        snprintf(fI, 16, "%d", ItoB[0]);
+        snprintf(fB, 16, "%d", BtoD[1]);
+        snprintf(fD, 16, "%d", NtoB_Drone[0]);
+        snprintf(fO, 16, "%d", OtoB[0]);
+        
+        char blackPath[1024];
+        snprintf(blackPath, sizeof(blackPath), "%s/blackboard", start_path);
+
+        char *argsB[16];
+        int i = 0;
+        argsB[i++] = "konsole";
+        
+        char geom[32];
+        if (!is_server && win_w > 0 && win_h > 0) {
+            snprintf(geom, sizeof(geom), "%dx%d", win_w, win_h);
+            argsB[i++] = "--qwindowgeometry";
+            argsB[i++] = geom;
+        }
+
+        argsB[i++] = "--workdir";
+        argsB[i++] = start_path;
+        argsB[i++] = "-e";
+        argsB[i++] = blackPath;
+        argsB[i++] = fI;
+        argsB[i++] = fB;
+        argsB[i++] = fD;
+        argsB[i++] = fO;
+        argsB[i++] = "-1"; // TtoB unused
+        argsB[i++] = wdPidStr;
+        argsB[i++] = fM;
+        argsB[i++] = NULL;
+
+        execvp("konsole", argsB);
+        _exit(1);
+    }
+    return p;
 }
 
 // --- NETWORK MODE (ASSIGNMENT 3) ---
@@ -251,73 +318,35 @@ void run_network(char *start_path) {
     int opt = 1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
+    // Performance: Disable Nagle (TCP_NODELAY)
+    setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+
+    // Robustness: Receive Timeout
+    struct timeval tv = {5, 0}; // 5s timeout
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
 
     int win_w = 0, win_h = 0;
-
     int client_or_server_fd = -1;
 
-    if (mode == 1) { // SERVER
-        int port;
-        printf("Enter Port to listen on (e.g. 5000): ");
-        scanf("%d", &port);
-        printf("Enter Blackboard Dimensions (Columns Rows) (e.g. 80 24): ");
-        scanf("%d %d", &win_w, &win_h);
-
-        addr.sin_addr.s_addr = INADDR_ANY;
-        addr.sin_port = htons(port);
-
-        if(bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) die("bind failed");
-        listen(sockfd, 1);
-        printf("Waiting for client on port %d...\n", port);
-
-        int clientfd = accept(sockfd, NULL, NULL);
-        if(clientfd < 0) die("accept failed");
-        printf("Client connected!\n");
-
-        // Send Dimensions
-        NetInitMsg init = { win_w, win_h };
-        send(clientfd, &init, sizeof(init), 0);
-
-        client_or_server_fd = clientfd;
-        close(sockfd); 
-
-    } else { // CLIENT
-        char ip[64];
-        int port;
-        printf("Enter Server IP: ");
-        scanf("%s", ip);
-        printf("Enter Server Port: ");
-        scanf("%d", &port);
-
-        addr.sin_addr.s_addr = inet_addr(ip);
-        addr.sin_port = htons(port);
-
-        if(connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) die("connect failed");
-        printf("Connected to Server!\n");
-
-        // Receive Dimensions
-        NetInitMsg init;
-        recv(sockfd, &init, sizeof(init), 0);
-        printf("Received Dimensions: %d x %d\n", init.w, init.h);
-        
-        win_w = init.w;
-        win_h = init.h;
-        client_or_server_fd = sockfd;
-    }
-
-    // Now launch processes
+    // Pipes initialization
+    // ItoB = input -> blackboard
+    // BtoD = blackboard -> drone
+    // DtoN = drone -> network (local state update)
+    // OtoB = obstacles -> blackboard 
+    // NtoB_Drone = network -> blackboard (remote drone position)
+    // BtoM = blackboard -> main (dimensions)
     
-    // Pipes
     int ItoB[2], BtoD[2], DtoN[2], OtoB[2], TtoB[2]; 
-    
-    int NtoB_Drone[2]; 
+    int NtoB_Drone[2], BtoM[2]; 
 
-    if(pipe(ItoB)<0 || pipe(BtoD)<0 || pipe(DtoN)<0 || pipe(OtoB)<0 || pipe(TtoB)<0 || pipe(NtoB_Drone)<0)
+    if(pipe(ItoB)<0 || pipe(BtoD)<0 || pipe(DtoN)<0 || pipe(OtoB)<0 || pipe(TtoB)<0 || pipe(NtoB_Drone)<0 || pipe(BtoM)<0)
         die("pipe failed");
 
+    // Targets ununsed in network mode
     close(TtoB[0]); close(TtoB[1]);
 
     // Watchdog
@@ -331,8 +360,9 @@ void run_network(char *start_path) {
         close(DtoN[0]); close(DtoN[1]);
         close(OtoB[0]); close(OtoB[1]);
         close(NtoB_Drone[0]); close(NtoB_Drone[1]);
-        close(client_or_server_fd);
-
+        close(BtoM[0]); close(BtoM[1]);
+        close(sockfd);
+        
         char wdPath[1024];
         snprintf(wdPath, sizeof(wdPath), "%s/watchdog", start_path);
         execlp(wdPath, "watchdog", NULL);
@@ -342,6 +372,82 @@ void run_network(char *start_path) {
 
     char wdPidStr[16];
     snprintf(wdPidStr, 16, "%d", p_watchdog);
+
+    if (mode == 1) { // SERVER
+        int port;
+        printf("Enter Port to listen on (e.g. 5000): ");
+        if (scanf("%d", &port) != 1 || port < 1024 || port > 65535) {
+             die("Invalid port (must be 1024-65535)");
+        }
+        // Dimensions NOT asked here anymore
+
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(port);
+
+        if(bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) die("bind failed");
+        listen(sockfd, 1);
+        printf("Waiting for client on port %d...\n", port);
+
+        int clientfd = accept(sockfd, NULL, NULL);
+        if(clientfd < 0) die("accept failed");
+        printf("Client connected!\n");
+        
+        client_or_server_fd = clientfd;
+        close(sockfd); 
+
+        // Fork Blackboard NOW to get dimensions
+        p_blackboard = spawn_blackboard(start_path, wdPidStr, client_or_server_fd,
+                                        ItoB, BtoD, DtoN, OtoB, NtoB_Drone, BtoM,
+                                        1, 0, 0);
+
+        // Parent reads dimensions
+        close(BtoM[1]); // Close write end
+        struct { int w; int h; } dims;
+        ssize_t n = read(BtoM[0], &dims, sizeof(dims));
+        if (n == sizeof(dims)) {
+            win_w = dims.w;
+            win_h = dims.h;
+            printf("Detected Blackboard Dimensions: %d x %d\n", win_w, win_h);
+        } else {
+            printf("Failed to read dimensions from blackboard. Using defaults.\n");
+            win_w = 80; win_h = 24;
+        }
+        close(BtoM[0]);
+
+        // Send Dimensions
+        NetInitMsg init = { win_w, win_h };
+        send(clientfd, &init, sizeof(init), 0);
+        
+    } else { // CLIENT
+        char ip[64];
+        int port;
+        printf("Enter Server IP: ");
+        scanf("%63s", ip);
+        printf("Enter Server Port: ");
+        if (scanf("%d", &port) != 1 || port < 1024 || port > 65535) {
+             die("Invalid port");
+        }
+
+        if (inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) die("Invalid address");
+        addr.sin_port = htons(port);
+
+        if(connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) die("connect failed");
+        printf("Connected to Server!\n");
+
+        // Receive Dimensions
+        NetInitMsg init;
+        recv(sockfd, &init, sizeof(init), 0);
+        printf("Received Dimensions: %d x %d\n", init.w, init.h);
+        
+        win_w = init.w;
+        win_h = init.h;
+        client_or_server_fd = sockfd;
+
+        // Fork Blackboard
+        p_blackboard = spawn_blackboard(start_path, wdPidStr, client_or_server_fd,
+                                        ItoB, BtoD, DtoN, OtoB, NtoB_Drone, BtoM,
+                                        0, win_w, win_h);
+    }
 
     // Drone
     pid_t p = fork();
@@ -355,6 +461,7 @@ void run_network(char *start_path) {
         close(NtoB_Drone[0]); close(NtoB_Drone[1]);
         close(DtoN[0]); 
         close(client_or_server_fd);
+        close(BtoM[0]); close(BtoM[1]);
 
         char fdBtoD_r[16], fdDtoN_w[16];
         snprintf(fdBtoD_r,16,"%d",BtoD[0]);
@@ -378,6 +485,7 @@ void run_network(char *start_path) {
         close(DtoN[1]); // Write side
         close(NtoB_Drone[0]); // Read side
         close(OtoB[0]); // Read side
+        close(BtoM[0]); close(BtoM[1]);
         
         char sfd[16], fdD_r[16], fdO_w[16], fdSelf_w[16], winW_str[16], winH_str[16], role_str[16];
         snprintf(sfd, 16, "%d", client_or_server_fd);
@@ -407,6 +515,7 @@ void run_network(char *start_path) {
         close(OtoB[0]); close(OtoB[1]);
         close(NtoB_Drone[0]); close(NtoB_Drone[1]);
         close(client_or_server_fd);
+        close(BtoM[0]); close(BtoM[1]);
         
         char fdItoB_w[16];
         snprintf(fdItoB_w, 16, "%d", ItoB[1]);
@@ -419,59 +528,6 @@ void run_network(char *start_path) {
     }
     p_input = p2;
 
-    // Blackboard
-    pid_t p3 = fork();
-    if(p3 < 0) die("fork blackboard failed");
-    if(p3==0){
-        chdir(start_path);
-        
-        // Blackboard reads: ItoB[0], NtoB_Drone[0] (as DtoB), OtoB[0], TtoB[0] (closed)
-        char fdItoB_r[16], fdBtoD_w[16], fdDtoB_r[16], fdOtoB_r[16], fdTtoB_r[16] = "-1";
-        snprintf(fdItoB_r,16,"%d",ItoB[0]);
-        snprintf(fdBtoD_w,16,"%d",BtoD[1]);
-        snprintf(fdDtoB_r,16,"%d",NtoB_Drone[0]);
-        snprintf(fdOtoB_r,16,"%d",OtoB[0]);
-        
-        close(client_or_server_fd);
-        
-        char blackPath[1024];
-        snprintf(blackPath,sizeof(blackPath),"%s/blackboard", start_path);
-        
-        char *argsB[] = {
-            "konsole",
-            NULL, NULL, // Allocating space for geom args
-            "--workdir", start_path, 
-            "-e", blackPath,
-            fdItoB_r, fdBtoD_w, fdDtoB_r, fdOtoB_r, fdTtoB_r, wdPidStr, 
-            NULL
-        };
-        
-        // Manually handling dynamic args
-        if (win_w > 0 && win_h > 0) {
-             char geom[32];
-             snprintf(geom, sizeof(geom), "%dx%d", win_w, win_h);
-             argsB[1] = "--qwindowgeometry";
-             argsB[2] = geom;
-        } else {
-            // Shift array if no geom
-            argsB[1] = argsB[3]; // --workdir
-            argsB[2] = argsB[4]; // path
-            argsB[3] = argsB[5]; // -e
-            argsB[4] = argsB[6]; // blackPath
-            argsB[5] = argsB[7]; // ...
-            argsB[6] = argsB[8]; 
-            argsB[7] = argsB[9]; 
-            argsB[8] = argsB[10]; 
-            argsB[9] = argsB[11];
-            argsB[10] = argsB[12];
-            argsB[11] = NULL;
-        }
-        
-        execvp("konsole", argsB);
-        _exit(1);
-    }
-    p_blackboard = p3;
-
     // Parent closes all
     close(ItoB[0]); close(ItoB[1]);
     close(BtoD[0]); close(BtoD[1]);
@@ -479,6 +535,7 @@ void run_network(char *start_path) {
     close(OtoB[0]); close(OtoB[1]);
     close(NtoB_Drone[0]); close(NtoB_Drone[1]);
     close(client_or_server_fd);
+    close(BtoM[0]); close(BtoM[1]); // Close BtoM
 
     while(1) {
         pause();

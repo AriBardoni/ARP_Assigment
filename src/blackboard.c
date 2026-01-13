@@ -343,6 +343,12 @@ int main(int argc,char **argv){
     int fdOtoB = atoi(argv[4]);
     int fdTtoB = atoi(argv[5]);
     pid_t wd_pid = (pid_t)atoi(argv[6]);
+    
+    // New argument: pipe to write dimensions back to Main
+    int fdBtoM = -1;
+    if (argc >= 8) {
+        fdBtoM = atoi(argv[7]);
+    }
 
     signal(SIGINT,cleanup);
 
@@ -369,6 +375,17 @@ int main(int argc,char **argv){
 
     int w = getmaxx(viewWin);
     int h = getmaxy(viewWin);
+
+    // If we have a valid pipe to Main, send dimensions
+    if (fdBtoM != -1) {
+        // Send w, h as two ints
+        struct { int w; int h; } dims;
+        dims.w = w;
+        dims.h = h;
+        if (write(fdBtoM, &dims, sizeof(dims)) < 0) {
+             perror("blackboard: write dims failed");
+        }
+    }
 
     // obstacle spawn
     for (int i = 0; i < N_OBSTACLES; i++) {
