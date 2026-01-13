@@ -183,7 +183,7 @@ void run_local(char *start_path) {
         close(TtoB[0]); // write only
 
         char fdTtoB_w[16];
-        snprintf(fdTtoB_w, 16, "%d", TtoB[1]);a
+        snprintf(fdTtoB_w, 16, "%d", TtoB[1]);
 
         char targetsPath[1024];
         snprintf(targetsPath, sizeof(targetsPath), "%s/targets", start_path);
