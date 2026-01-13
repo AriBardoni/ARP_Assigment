@@ -577,7 +577,7 @@ int main() {
     strcat(PATH, "/bin");
     
     int choice;
-    printf("Select Mode:\n1. Standalone\n2. Networked\n3. Quit: q\n");
+    printf("Select Mode:\n1. Standalone\n2. Networked\n3. Quit\n");
     if(scanf("%d", &choice) != 1){
         printf("Invalid choice. Shutting down\n");
         return 1;
