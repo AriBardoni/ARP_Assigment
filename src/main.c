@@ -243,7 +243,7 @@ void run_local(char *start_path) {
 // Helper to spawn Blackboard (Deduplicated)
 pid_t spawn_blackboard(char *start_path, char *wdPidStr, int socket_fd, 
                        int *ItoB, int *BtoD, int *DtoN, int *OtoB, int *NtoB_Drone, int *BtoM,
-                       int is_server, int win_w, int win_h) {
+                       int is_server, int win_w, int win_h, int spawn_random) {
     pid_t p = fork();
     if (p < 0) die("fork blackboard failed");
     if (p == 0) {
@@ -262,8 +262,15 @@ pid_t spawn_blackboard(char *start_path, char *wdPidStr, int socket_fd,
         if(is_server) {
             snprintf(fM, 16, "%d", BtoM[1]);
         } else {
+            // Can be -1 if not sending dims, or if Client. 
+            // In Client mode we pass win_w/win_h via args, BtoM unusable/unused but we might have opened it so close write end?
+            // Actually Client passes -1 for fM usually.
+            // If we are passing dimensions TO main, we use fM. Client receives dims FROM main, so BtoM unused.
             close(BtoM[1]);
         }
+        
+        char fR[16];
+        snprintf(fR, 16, "%d", spawn_random);
 
         char fI[16], fB[16], fD[16], fO[16];
         snprintf(fI, 16, "%d", ItoB[0]);
@@ -296,6 +303,7 @@ pid_t spawn_blackboard(char *start_path, char *wdPidStr, int socket_fd,
         argsB[i++] = "-1"; // TtoB unused
         argsB[i++] = wdPidStr;
         argsB[i++] = fM;
+        argsB[i++] = fR;
         argsB[i++] = NULL;
 
         execvp("konsole", argsB);
@@ -363,16 +371,20 @@ void run_network(char *start_path) {
     // OtoB = obstacles -> blackboard 
     // NtoB_Drone = network -> blackboard (remote drone position)
     // BtoM = blackboard -> main (dimensions)
+    // TtoN = targets -> network (Server sends targets to Client)
+    // TtoB = targets -> blackboard (Server displays them locally, Client receives them)
     
     int ItoB[2], BtoD[2], DtoN[2], OtoB[2], TtoB[2]; 
-    int NtoB_Drone[2], BtoM[2]; 
+    int NtoB_Drone[2], BtoM[2], TtoN[2];
 
-    if(pipe(ItoB)<0 || pipe(BtoD)<0 || pipe(DtoN)<0 || pipe(OtoB)<0 || pipe(TtoB)<0 || pipe(NtoB_Drone)<0 || pipe(BtoM)<0)
+    if(pipe(ItoB)<0 || pipe(BtoD)<0 || pipe(DtoN)<0 || pipe(OtoB)<0 || pipe(TtoB)<0 || pipe(NtoB_Drone)<0 || pipe(BtoM)<0 || pipe(TtoN)<0)
         die("pipe failed");
 
-    // Targets ununsed in network mode
-    close(TtoB[0]); close(TtoB[1]);
-
+    // Targets unused READ end in Main (Network reads from TtoN, Blackboard reads from TtoB)
+    // In Server mode: TtoB Write end is used by Network (echo) OR Targets process? 
+    // Actually: Targets Process -> TtoN. Network reads TtoN, sends to Client, AND writes to TtoB (for local BB).
+    // So Server Targets process writes to TtoN[1].
+    
     // Watchdog logic moved to Server/Client blocks
     p_watchdog = 0;
     char wdPidStr[16];
@@ -397,37 +409,82 @@ void run_network(char *start_path) {
         if(clientfd < 0) die("accept failed");
         printf("Client connected!\n");
         
+        // FIX: Disable Nagle's Algorithm for Server
+        int flag = 1;
+        if (setsockopt(clientfd, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int)) < 0) {
+            log_system("MAIN", "setsockopt TCP_NODELAY failed");
+        }
+        
         client_or_server_fd = clientfd;
         close(sockfd); 
 
         // Start Watchdog AFTER connection established
-        p_watchdog = spawn_watchdog_network(start_path, client_or_server_fd,
-                                            ItoB, BtoD, DtoN, OtoB, NtoB_Drone, BtoM);
+        // FIX: Watchdog disabled in Network mode per user request
+        p_watchdog = 0;
+        // p_watchdog = spawn_watchdog_network(start_path, client_or_server_fd,
+        //                                     ItoB, BtoD, DtoN, OtoB, NtoB_Drone, BtoM);
         snprintf(wdPidStr, 16, "%d", p_watchdog); 
 
         // Fork Blackboard NOW to get dimensions
         p_blackboard = spawn_blackboard(start_path, wdPidStr, client_or_server_fd,
                                         ItoB, BtoD, DtoN, OtoB, NtoB_Drone, BtoM,
-                                        1, 0, 0);
+                                        1, 0, 0, 0); // Server spawns random = 0 (No static obstacles)
 
+        // Server does NOT spawn Obstacles (No dynamic obstacles)
+        /*
+        pid_t po = fork();
+        if(po == 0){
+             chdir(start_path);
+             close(ItoB[0]); close(ItoB[1]);
+             close(BtoD[0]); close(BtoD[1]); 
+             close(DtoN[0]); close(DtoN[1]);
+             close(NtoB_Drone[0]); close(NtoB_Drone[1]);
+             close(TtoN[0]); close(TtoN[1]); 
+             close(TtoB[0]); close(TtoB[1]);
+             close(BtoM[0]); close(BtoM[1]); 
+             close(OtoB[0]); 
+             char fdO[16]; snprintf(fdO, 16, "%d", OtoB[1]);
+             execlp("./obstacles", "obstacles", fdO, wdPidStr, NULL);
+             _exit(1);
+        }
+        p_obstacles = po;
+        */
+        p_obstacles = 0;
+
+        // Server spawns Targets -> writes to TtoN[1]
+        pid_t pt = fork();
+        if(pt == 0){
+             chdir(start_path);
+             close(ItoB[0]); close(ItoB[1]);
+             close(BtoD[0]); close(BtoD[1]); 
+             close(DtoN[0]); close(DtoN[1]);
+             close(NtoB_Drone[0]); close(NtoB_Drone[1]);
+             close(OtoB[0]); close(OtoB[1]);
+             close(BtoM[0]); close(BtoM[1]); 
+             close(TtoB[0]); close(TtoB[1]);
+             close(TtoN[0]); // Write only
+             char fdT[16]; snprintf(fdT, 16, "%d", TtoN[1]);
+             execlp("./targets", "targets", fdT, wdPidStr, NULL);
+             _exit(1);
+        }
+        p_targets = pt;
+        
         // Parent reads dimensions
         close(BtoM[1]); // Close write end
-        struct { int w; int h; } dims;
-        ssize_t n = read(BtoM[0], &dims, sizeof(dims));
-        if (n == sizeof(dims)) {
-            win_w = dims.w;
-            win_h = dims.h;
-            printf("Detected Blackboard Dimensions: %d x %d\n", win_w, win_h);
-        } else {
-            printf("Failed to read dimensions from blackboard. Using defaults.\n");
-            win_w = 80; win_h = 24;
-        }
-        close(BtoM[0]);
-
-        // Send Dimensions
-        NetInitMsg init = { win_w, win_h };
-        send(clientfd, &init, sizeof(init), 0);
         
+        // FIX: Do not wait for Blackboard in Server mode (pipe broken by konsole)
+        win_w = 80;
+        win_h = 24;
+        printf("Using Default Server Dimensions: %d x %d\n", win_w, win_h);
+        
+        // Send Dimensions
+        log_system("MAIN", "Sending dimensions to Client...");
+        NetInitMsg init = { win_w, win_h };
+        if (send(clientfd, &init, sizeof(init), 0) < 0) perror("send init failed");
+        log_system("MAIN", "Dimensions sent");
+        
+        usleep(100000); // 100ms wait for Client to process Main-level handshake
+
     } else { // CLIENT
         char ip[64];
         int port;
@@ -443,10 +500,21 @@ void run_network(char *start_path) {
 
         if(connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) die("connect failed");
         printf("Connected to Server!\n");
+        log_system("MAIN", "Connected to Server");
+
+        // FIX: Disable Nagle's Algorithm
+        int flag = 1;
+        if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int)) < 0) {
+            log_system("MAIN", "setsockopt TCP_NODELAY failed");
+        }
 
         // Receive Dimensions
         NetInitMsg init;
-        recv(sockfd, &init, sizeof(init), 0);
+        log_system("MAIN", "Waiting for dimensions...");
+        int n = recv(sockfd, &init, sizeof(init), 0);
+        char logbuf[64]; snprintf(logbuf,64, "Received dimensions bytes: %d", n);
+        log_system("MAIN", logbuf);
+
         printf("Received Dimensions: %d x %d\n", init.w, init.h);
         
         win_w = init.w;
@@ -459,7 +527,7 @@ void run_network(char *start_path) {
         // Fork Blackboard
         p_blackboard = spawn_blackboard(start_path, wdPidStr, client_or_server_fd,
                                         ItoB, BtoD, DtoN, OtoB, NtoB_Drone, BtoM,
-                                        0, win_w, win_h);
+                                        0, win_w, win_h, 0); // Client spawns random = 0
     }
 
     // Drone
@@ -498,9 +566,17 @@ void run_network(char *start_path) {
         close(DtoN[1]); // Write side
         close(NtoB_Drone[0]); // Read side
         close(OtoB[0]); // Read side
-        close(BtoM[0]); close(BtoM[1]);
+        close(BtoM[0]); close(BtoM[1]); 
         
+        // TtoN: Network reads from it (Server only)
+        close(TtoN[1]); 
+        
+        // TtoB: Network writes to it (Server & Client)
+        close(TtoB[0]); 
+
         char sfd[16], fdD_r[16], fdO_w[16], fdSelf_w[16], winW_str[16], winH_str[16], role_str[16];
+        char fdTn_r[16], fdTb_w[16];
+
         snprintf(sfd, 16, "%d", client_or_server_fd);
         snprintf(fdD_r, 16, "%d", DtoN[0]);
         snprintf(fdO_w, 16, "%d", OtoB[1]);
@@ -508,11 +584,14 @@ void run_network(char *start_path) {
         snprintf(winW_str, 16, "%d", win_w);
         snprintf(winH_str, 16, "%d", win_h);
         snprintf(role_str, 16, "%d", (mode == 1));
+        
+        snprintf(fdTn_r, 16, "%d", TtoN[0]);
+        snprintf(fdTb_w, 16, "%d", TtoB[1]);
 
         char netPath[1024];
         snprintf(netPath, sizeof(netPath), "%s/network", start_path);
         
-        execlp(netPath, "network", sfd, fdD_r, fdO_w, wdPidStr, fdSelf_w, winW_str, winH_str, role_str, NULL);
+        execlp(netPath, "network", sfd, fdD_r, fdO_w, wdPidStr, fdSelf_w, winW_str, winH_str, role_str, fdTn_r, fdTb_w, NULL);
         _exit(1);
     }
     p_network = pn;
@@ -548,7 +627,9 @@ void run_network(char *start_path) {
     close(OtoB[0]); close(OtoB[1]);
     close(NtoB_Drone[0]); close(NtoB_Drone[1]);
     close(client_or_server_fd);
-    close(BtoM[0]); close(BtoM[1]); // Close BtoM
+    close(BtoM[0]); close(BtoM[1]); 
+    close(TtoN[0]); close(TtoN[1]);
+    close(TtoB[0]); close(TtoB[1]);
 
     while(1) {
         pause();

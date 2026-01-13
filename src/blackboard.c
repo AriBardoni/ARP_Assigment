@@ -75,6 +75,14 @@ typedef struct {
 Obstacle obs[N_OBSTACLES];
 Targets  tar[N_TARGETS];
 
+typedef struct {
+    float x;
+    float y;
+    int active;
+} RemoteDrone;
+
+RemoteDrone remote_drone = {0, 0, 0};
+
 // function for reading the parameters from the file
 void load_params() {
     FILE *f = fopen("params.txt", "r");
@@ -177,6 +185,15 @@ void draw_map(StateMsg state, int w, int h){
         if (tar[i].active) {
             wattroff(viewWin, COLOR_PAIR(2));
         }
+    }
+
+    // Draw Remote Drone
+    if (remote_drone.active) {
+        int rdx = (int)((remote_drone.x / 100.0f) * (w - 3));
+        int rdy = (int)((remote_drone.y / 100.0f) * (h - 3));
+        wattron(viewWin, A_BOLD); // Make it bold
+        mvwaddch(viewWin, rdy + 1, rdx + 1, 'K');
+        wattroff(viewWin, A_BOLD);
     }
 
     wattron(viewWin, COLOR_PAIR(1));
@@ -349,7 +366,14 @@ int main(int argc,char **argv){
     if (argc >= 8) {
         fdBtoM = atoi(argv[7]);
     }
+    
+    // New argument: spawn_random (1=yes, 0=no)
+    int spawn_random = 1; 
+    if (argc >= 9) {
+        spawn_random = atoi(argv[8]);
+    }
 
+    signal(SIGPIPE, SIG_IGN); // Ignore SIGPIPE to avoid crash on broken pipe write
     signal(SIGINT,cleanup);
 
     setlocale(LC_ALL,"");
@@ -382,37 +406,41 @@ int main(int argc,char **argv){
         struct { int w; int h; } dims;
         dims.w = w;
         dims.h = h;
+        // Check write return to handle error gracefully
         if (write(fdBtoM, &dims, sizeof(dims)) < 0) {
-             perror("blackboard: write dims failed");
+             // perror("blackboard: write dims failed");
+             // Just ignore failure, Main might have closed it or used defaults
         }
     }
 
     // obstacle spawn
-    for (int i = 0; i < N_OBSTACLES; i++) {
-        int y, x;
-        do {
-            y = rand() % (h - 2) + 1;
-            x = rand() % (w - 2) + 1;
-        } while (!check_spawn_ok(x,y,w,h) ||
-                 is_occupied(y, x, obs, i, tar, 0));
+    if (spawn_random) {
+        for (int i = 0; i < N_OBSTACLES; i++) {
+            int y, x;
+            do {
+                y = rand() % (h - 2) + 1;
+                x = rand() % (w - 2) + 1;
+            } while (!check_spawn_ok(x,y,w,h) ||
+                     is_occupied(y, x, obs, i, tar, 0));
 
-        obs[i].y_ob = y;
-        obs[i].x_ob = x;
-    }
+            obs[i].y_ob = y;
+            obs[i].x_ob = x;
+        }
 
-    // target spawn
-    for (int i = 0; i < N_TARGETS; i++) {
-        int y, x;
-        do {
-            y = rand() % (h - 2) + 1;
-            x = rand() % (w - 2) + 1;
-        } while (!check_spawn_ok(x,y,w,h) ||
-                 is_occupied(y, x, obs, N_OBSTACLES, tar, i));
+        // target spawn
+        for (int i = 0; i < N_TARGETS; i++) {
+            int y, x;
+            do {
+                y = rand() % (h - 2) + 1;
+                x = rand() % (w - 2) + 1;
+            } while (!check_spawn_ok(x,y,w,h) ||
+                     is_occupied(y, x, obs, N_OBSTACLES, tar, i));
 
-        tar[i].y_tar = y;
-        tar[i].x_tar = x;
-        tar[i].taken = 0;
-        tar[i].active = (i == 0);
+            tar[i].y_tar = y;
+            tar[i].x_tar = x;
+            tar[i].taken = 0;
+            tar[i].active = (i == 0);
+        }
     }
 
     float Fx=0,Fy=0;
@@ -488,26 +516,36 @@ int main(int argc,char **argv){
 
         fd_set s;
         FD_ZERO(&s);
-        FD_SET(fdItoB,&s);
-        FD_SET(fdDtoB,&s);
-        FD_SET(fdOtoB,&s);
-        FD_SET(fdTtoB,&s);
+        if (fdItoB != -1) FD_SET(fdItoB,&s);
+        if (fdDtoB != -1) FD_SET(fdDtoB,&s);
+        if (fdOtoB != -1) FD_SET(fdOtoB,&s);
+        if (fdTtoB != -1) FD_SET(fdTtoB,&s);
 
-        int maxfd = fdItoB;
+        int maxfd = -1;
+        if(fdItoB>maxfd) maxfd=fdItoB;
         if(fdDtoB>maxfd) maxfd=fdDtoB;
         if(fdOtoB>maxfd) maxfd=fdOtoB;
         if(fdTtoB>maxfd) maxfd=fdTtoB;
 
         struct timeval tv={0,20000};
-        int rv = select(maxfd+1,&s,NULL,NULL,&tv);
+        
+        // If maxfd is -1 (all closed), just sleep
+        int rv = 0;
+        if (maxfd >= 0) {
+            rv = select(maxfd+1,&s,NULL,NULL,&tv);
+        } else {
+            usleep(20000);
+        }
 
         if(rv>0){
 
             // input
-            if(FD_ISSET(fdItoB,&s)){
+            if(fdItoB != -1 && FD_ISSET(fdItoB,&s)){
                 KeyMsg km;
-                if(read(fdItoB,&km,sizeof(km))>0){
-
+                int n = read(fdItoB,&km,sizeof(km));
+                if (n <= 0) {
+                    close(fdItoB); fdItoB = -1;
+                } else {
                     log_system("BLACKBOARD", "input received");
 
                     if(km.cmd==9) break;
@@ -530,17 +568,30 @@ int main(int argc,char **argv){
             }
 
             // drone state
-            if(FD_ISSET(fdDtoB,&s)){
+            if(fdDtoB != -1 && FD_ISSET(fdDtoB,&s)){
                 StateMsg sm;
-                if(read(fdDtoB,&sm,sizeof(sm))>0)
-                state = sm;
+                int n = read(fdDtoB,&sm,sizeof(sm));
+                if (n <= 0) {
+                    close(fdDtoB); fdDtoB = -1;
+                } else {
+                    state = sm;
+                }
             }
 
             // obstacles
-            if(FD_ISSET(fdOtoB,&s)){
+            if(fdOtoB != -1 && FD_ISSET(fdOtoB,&s)){
                 ObjMsg om;
-                if(read(fdOtoB,&om,sizeof(om))>0){
-                    if(om.id >= 0 && om.id < N_OBSTACLES){
+                int n = read(fdOtoB,&om,sizeof(om));
+                if (n <= 0) {
+                   close(fdOtoB); fdOtoB = -1;
+                } else {
+                    if (om.type == 'D') {
+                        // Remote Drone Update
+                        remote_drone.x = om.x;
+                        remote_drone.y = om.y;
+                        remote_drone.active = 1; 
+                    }
+                    else if(om.id >= 0 && om.id < N_OBSTACLES){
 
                         int y = (int)((om.y/100.0f)*(h-2));
                         int x = (int)((om.x/100.0f)*(w-2));
@@ -555,20 +606,25 @@ int main(int argc,char **argv){
             }
 
             // targets
-            if(FD_ISSET(fdTtoB,&s)){
+            if(fdTtoB != -1 && FD_ISSET(fdTtoB,&s)){
                 ObjMsg om;
-                if(read(fdTtoB,&om,sizeof(om))>0){
+                int n = read(fdTtoB,&om,sizeof(om));
+                if (n <= 0) {
+                     close(fdTtoB); fdTtoB = -1;
+                } else {
                     if(om.id >= 0 && om.id < N_TARGETS){
 
-                        if(tar[om.id].taken) continue;
+                        if(om.type == 'T') { // Ensure it is a target update
+                            if(tar[om.id].taken) continue;
 
-                        int y = (int)((om.y/100.0f)*(h-2));
-                        int x = (int)((om.x/100.0f)*(w-2));
+                            int y = (int)((om.y/100.0f)*(h-2));
+                            int x = (int)((om.x/100.0f)*(w-2));
 
-                        if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS))
-                        {
-                            tar[om.id].y_tar=y;
-                            tar[om.id].x_tar=x;
+                            if(!is_occupied(y,x,obs,N_OBSTACLES,tar,N_TARGETS))
+                            {
+                                tar[om.id].y_tar=y;
+                                tar[om.id].x_tar=x;
+                            }
                         }
                     }
                 }
