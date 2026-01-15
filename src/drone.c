@@ -47,7 +47,7 @@ int main(int argc,char **argv){
     pid_t wd_pid = (pid_t)atoi(argv[3]);     // watchdog pid
 
     // Initial drone state
-    float x = 50, y = 50, vx = 0, vy = 0;
+    float x = 20, y = 15, vx = 0, vy = 0;
 
     float Fx = 0, Fy = 0;
     int counter = 0;
@@ -64,7 +64,7 @@ int main(int argc,char **argv){
 
             if(fm.reset){
                 log_system("DRONE", "reset received");
-                x = 50; y = 50;
+                x = 20; y = 15;
                 vx = 0; vy = 0;
             }
         }

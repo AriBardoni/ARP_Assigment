@@ -467,6 +467,9 @@ int main(int argc,char **argv){
         float totalFx = Fx + Frx + Fax;
         float totalFy = Fy + Fry + Fay;
 
+        log_system("BLACKBOARD", "Drone Pos Updated: x=%.2f y=%.2f | Fx=%.2f Fy=%.2f", 
+        state.x, state.y, totalFx, totalFy);
+
         ForceMsg fm = { totalFx, totalFy, M, K, T, 0, 0, 0.0f };
         write(fdBtoD, &fm, sizeof(fm));
 
