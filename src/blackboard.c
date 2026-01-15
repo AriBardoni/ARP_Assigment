@@ -14,7 +14,7 @@
 #include "common.h"
 
 #define N_OBSTACLES 10
-#define N_TARGETS   10
+#define N_TARGETS   10 
 #define TARGET_RADIUS 4.0f
 #define DRONE_X0 50
 #define DRONE_Y0 50
