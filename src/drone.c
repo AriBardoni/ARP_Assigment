@@ -46,23 +46,8 @@ int main(int argc,char **argv){
     int fdDtoB = atoi(argv[2]);  // drone → blackboard
     pid_t wd_pid = (pid_t)atoi(argv[3]);     // watchdog pid
 
-    // Default initial position (Center)
-    float init_x = 50.0f;
-    float init_y = 50.0f;
-
-    // Read custom start position from Main if provided
-    if (argc >= 6) {
-        init_x = atof(argv[4]);
-        init_y = atof(argv[5]);
-        char logbuf[64];
-        snprintf(logbuf, sizeof(logbuf), "Initial Pos: %.1f, %.1f", init_x, init_y);
-        log_system("DRONE", logbuf);
-    }
-
-    // Current state
-    float x = init_x;
-    float y = init_y;
-    float vx = 0, vy = 0;
+    // Initial drone state
+    float x = 50, y = 50, vx = 0, vy = 0;
 
     float Fx = 0, Fy = 0;
     int counter = 0;
@@ -79,9 +64,7 @@ int main(int argc,char **argv){
 
             if(fm.reset){
                 log_system("DRONE", "reset received");
-                // Reset to the SPECIFIC initial position (not always 50,50)
-                x = init_x; 
-                y = init_y;
+                x = 50; y = 50;
                 vx = 0; vy = 0;
             }
         }

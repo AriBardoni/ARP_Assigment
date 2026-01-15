@@ -10,16 +10,17 @@
 
 // Check interval in seconds
 #define CHECK_INTERVAL 1
-// Timeout threshold
+// Timeout threshold (if no signal for this long, consider dead)
 #define TIMEOUT_THRESHOLD 10
 
 int main(int argc, char **argv) {
-    (void)argc; (void)argv; 
+    (void)argc; (void)argv; // Unused
 
     logger_init("../logs");
     log_process_register("WATCHDOG", getpid());
     log_system("WATCHDOG", "started");
 
+    // Block SIGUSR1 so we can wait for it synchronously
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, SIGUSR1);
@@ -28,6 +29,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    // Array to store the last time a signal was received from each process
     time_t last_seen[PROCESS_COUNT];
     int last_area[PROCESS_COUNT];
     time_t now = time(NULL);
@@ -41,7 +43,8 @@ int main(int argc, char **argv) {
         "Drone", "Input", "Blackboard", "Obstacles", "Targets", "Network"
     };
 
-    printf("Watchdog started. Monitoring processes...\n");
+    printf("Watchdog started. Monitoring %d processes via signals.\n", PROCESS_COUNT);
+    log_message("LogFile1", "Watchdog", "Watchdog started");
 
     while (1) {
         struct timespec timeout;
@@ -53,12 +56,24 @@ int main(int argc, char **argv) {
 
         if (sig > 0 && sig == SIGUSR1) {
             int payload = info.si_value.sival_int;
-            int proc_id = payload & 0xFF;          
-            int area_id = (payload >> 8) & 0xFF;   
+            int proc_id = payload & 0xFF;          // process ID
+            int area_id = (payload >> 8) & 0xFF;   // code area
 
             if (proc_id >= 0 && proc_id < PROCESS_COUNT) {
                 last_seen[proc_id] = time(NULL);
                 last_area[proc_id] = area_id;
+                
+                // Log to file
+                char msg[256];
+                snprintf(msg, sizeof(msg), "Process %s executing Area %d", proc_names[proc_id], area_id);
+                log_message("LogFile1", "Watchdog", msg);
+                printf("Watchdog: %s\n", msg);
+            } else {
+                log_system("WATCHDOG", "received invalid process id");
+            }
+        } else {
+            if (errno != EAGAIN && errno != EINTR) {
+                log_system("WATCHDOG", "sigtimedwait error");
             }
         }
 
@@ -66,23 +81,25 @@ int main(int argc, char **argv) {
         now = time(NULL);
 
         for (int i = 0; i < PROCESS_COUNT; i++) {
-            // --- FIX: IGNORA IL PROCESSO NETWORK ---
-            // In modalità Locale, il Network non esiste.
-            // In modalità Network, il Watchdog è disabilitato.
-            // Quindi non dobbiamo mai controllare l'indice 5 (Network).
-            if (i == 5) continue; 
-            // ---------------------------------------
-
             if (now - last_seen[i] > TIMEOUT_THRESHOLD) {
+                char msg[256];
+                snprintf(msg, sizeof(msg), "ALERT: Process %d is unresponsive! (Last Area: %d)", i, last_area[i]);
+                log_message("LogFile1", "Watchdog", msg);
                 
-                fprintf(stderr, "Watchdog ALERT: Process %s (%d) is unresponsive! (Last seen %ld seconds ago)\n", 
-                        proc_names[i], i, now - last_seen[i]);
+                fprintf(stderr, "Watchdog ALERT: Process %d is unresponsive! (Last seen %ld seconds ago, Last Area: %d)\n", 
+                        i, now - last_seen[i], last_area[i]);
                 
                 fprintf(stderr, "Watchdog: Signaling main to shutdown...\n");
-                
+                fflush(stderr);
+
+                log_system("WATCHDOG", "ALERT: process unresponsive");
+                log_system("WATCHDOG", "signaling main for shutdown");
+
                 kill(getppid(), SIGUSR1);
 
-                while (1) sleep(1);
+                // Wait to be terminated by main
+                while (1)
+                    sleep(1);
             }
         }
     }

@@ -1,8 +1,310 @@
-/* ======================================================================================
- * FILE: network.c
- * Protocollo: Request -> Datum -> Ack
- * CORREZIONE: StateMsg allineato con Blackboard (x,y,vx,vy)
- * ====================================================================================== */
+/*#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <errno.h>
+#include <signal.h>
+#include <time.h>
+#include <fcntl.h>
+#include "logger.h"
+#include "common.h"
+
+int MySocket = -1;
+
+void cleanup(int sig) {
+    (void)sig;
+    if (MySocket != -1) {
+        close(MySocket);
+    }
+    log_system("NETWORK", "exiting");
+    exit(0);
+}
+
+// Helpers for Protocol
+void send_msg(int sock, const char *msg) {
+    char logbuf[128];
+    snprintf(logbuf, sizeof(logbuf), "sending '%s'", msg);
+    log_system("NETWORK", logbuf);
+    ssize_t n = send(sock, msg, strlen(msg) + 1, 0); 
+    if (n < 0) log_system("NETWORK", "send failed");
+}
+
+void recv_msg(int sock, char *buf, size_t size) {
+    memset(buf, 0, size);
+    ssize_t n = recv(sock, buf, size, 0);
+    if (n < 0) {
+        log_system("NETWORK", "recv failed");
+        // perror("recv");
+    } else if (n == 0) {
+        log_system("NETWORK", "recv returned 0 (connection closed)");
+    } else {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "recv got %ld bytes: '%s'", n, buf);
+        log_system("NETWORK", msg);
+    }
+}
+
+int main(int argc, char **argv) {
+    if (argc < 8) {
+        fprintf(stderr, "network: missing fds\n");
+        return 1;
+    }
+
+    logger_init("../logs");
+    log_process_register("NETWORK", getpid());
+    log_system("NETWORK", "started");
+
+    signal(SIGINT, cleanup);
+    signal(SIGTERM, cleanup);
+
+    MySocket = atoi(argv[1]);
+    int fdDtoN_r = atoi(argv[2]);
+    int fdOtoB_w = atoi(argv[3]);
+    pid_t wd_pid = (pid_t)atoi(argv[4]);
+    int fdNtoB_Drone_w = atoi(argv[5]);
+    int win_w = atoi(argv[6]);
+    int win_h = atoi(argv[7]);
+
+    // Set DtoN to non-blocking to check for updates without blocking global loop
+    int flags = fcntl(fdDtoN_r, F_GETFL, 0);
+    fcntl(fdDtoN_r, F_SETFL, flags | O_NONBLOCK);
+
+    float last_local_x = 0.0f, last_local_y = 0.0f;
+    int counter = 0;
+    
+    int is_server = 0; 
+    if (argc >= 9) {
+        is_server = atoi(argv[8]);
+    } else {
+        is_server = 0; 
+    }
+
+    
+     PROTOCOL VARIABLES
+    
+    int fdTtoN_r = -1;
+    int fdTtoB_w = -1;
+    if (argc >= 11) {
+        fdTtoN_r = atoi(argv[9]);
+        fdTtoB_w = atoi(argv[10]);
+    }
+    
+    // Non-blocking read for Targets (Server only)
+    if (is_server && fdTtoN_r != -1) {
+         int fl = fcntl(fdTtoN_r, F_GETFL, 0);
+         fcntl(fdTtoN_r, F_SETFL, fl | O_NONBLOCK);
+    }
+    
+    
+     PROTOCOL VARIABLES
+    
+    char buf[256];
+    
+    if (is_server) {
+        // SERVER MODE
+        log_system("NETWORK", "Starting Server Protocol");
+
+        // 1. snd ok; rcv ook;
+        send_msg(MySocket, "ok");
+        recv_msg(MySocket, buf, sizeof(buf)); // ook
+
+        if(strcmp(buf, "ook") == 0){
+            log_system("NETWORK", "OK");
+        }
+
+        // 2. snd size l,h; rcv sok <size>
+        char size_msg[64];
+        snprintf(size_msg, sizeof(size_msg), "size %d %d", win_w, win_h);
+        send_msg(MySocket, size_msg);
+        recv_msg(MySocket, buf, sizeof(buf)); // sok <size>
+        
+        // 3. Loop
+        while (1) {
+            // Check Local Updates
+            StateMsg local_state;
+            while(read(fdDtoN_r, &local_state, sizeof(local_state)) > 0) {
+                last_local_x = local_state.x;
+                last_local_y = local_state.y;
+                write(fdNtoB_Drone_w, &local_state, sizeof(local_state));
+            }
+            
+            // Check Local Targets (Server -> Client)
+            if (fdTtoN_r != -1) {
+                ObjMsg target_msg;
+                // Read all pending targets
+                while(read(fdTtoN_r, &target_msg, sizeof(target_msg)) > 0) {
+                     // 1. Write to local blackboard
+                     write(fdTtoB_w, &target_msg, sizeof(target_msg));
+                     
+                     // 2. Send to Client: "target id,x,y"
+                     send_msg(MySocket, "target");
+                     
+                     char t_str[64];
+                     snprintf(t_str, sizeof(t_str), "%d %f %f", target_msg.id, target_msg.x, target_msg.y);
+                     send_msg(MySocket, t_str);
+                     
+                     recv_msg(MySocket, buf, sizeof(buf)); // tok
+                }
+            }
+
+            // LOOP: snd drone; snd x,y; rcv dok <drone>
+            send_msg(MySocket, "drone");
+
+            log_system("NETWORK", "CI SIAMO 1");
+            
+            char pos_msg[64];
+            snprintf(pos_msg, sizeof(pos_msg), "%f %f", last_local_x, last_local_y);
+            send_msg(MySocket, pos_msg);
+            
+            log_system("NETWORK", "CI SIAMO 2");
+            recv_msg(MySocket, buf, sizeof(buf)); 
+            // Expect "dok ...". 
+
+            log_system("NETWORK", "CI SIAMO 3");
+            
+            // LOOP: snd obst; rcv x,y; snd pok <obstacle>
+            send_msg(MySocket, "obst");
+            
+            log_system("NETWORK", "CI SIAMO 4");
+            recv_msg(MySocket, buf, sizeof(buf)); // Receive "x,y" from remote
+
+            log_system("NETWORK", "CI SIAMO 5");
+
+            float rx, ry;
+            if(sscanf(buf, "%f %f", &rx, &ry) == 2) {
+                ObjMsg om;
+                om.type = 'D'; 
+                om.id = 0;     
+                om.x = rx;
+                om.y = ry;
+                write(fdOtoB_w, &om, sizeof(om));
+            }
+            
+            // Send Acknowledgement "pok <obstacle>"
+            char pok_msg[64];
+            snprintf(pok_msg, sizeof(pok_msg), "pok %f %f", rx, ry);
+            send_msg(MySocket, pok_msg);
+
+            log_system("NETWORK", "CI SIAMO 6");
+            
+            // Watchdog Update
+            counter++;
+            if (counter >= 20) {
+                union sigval value;
+                value.sival_int = PROCESS_NETWORK | (AREA_COMPUTE << 8); 
+                if (wd_pid > 0) {
+                    sigqueue(wd_pid, SIGUSR1, value);
+                }
+                counter = 0;
+            }
+            
+            usleep(20000); 
+        }
+        
+    } else {
+        // CLIENT MODE
+        log_system("NETWORK", "Starting Client Protocol");
+
+        // 1. rcv ok; snd ook
+        recv_msg(MySocket, buf, sizeof(buf)); // ok
+
+        log_system("NETWORK", "CI SIAMO 1");
+        send_msg(MySocket, "ook");
+
+        log_system("NETWORK", "CI SIAMO 2");
+        // 2. rcv size l,h; snd sok <size>
+        recv_msg(MySocket, buf, sizeof(buf)); // size 80,24
+
+        log_system("NETWORK", "CI SIAMO 3");
+        
+        // We can parse dimensions if needed, but we act as ACK.
+        char sok_msg[64];
+        snprintf(sok_msg, sizeof(sok_msg), "sok %s", buf + 5); // echo back size or part of it
+        send_msg(MySocket, sok_msg);
+
+        log_system("NETWORK", "CI SIAMO 4");
+
+        // 3. Loop with Switch
+        while (1) {
+            // Check Local Updates
+            StateMsg local_state;
+            while(read(fdDtoN_r, &local_state, sizeof(local_state)) > 0) {
+                last_local_x = local_state.x;
+                last_local_y = local_state.y;
+                write(fdNtoB_Drone_w, &local_state, sizeof(local_state));
+            }
+            
+            // rcv x (command)
+            recv_msg(MySocket, buf, sizeof(buf));
+            
+            if (strcmp(buf, "q") == 0) {
+                 send_msg(MySocket, "qok");
+                 break; 
+            }
+            else if (strcmp(buf, "target") == 0) {
+                 // rcv id,x,y; snd tok
+                 recv_msg(MySocket, buf, sizeof(buf));
+                 
+                 int tid; 
+                 float tx, ty;
+                 if (sscanf(buf, "%d %f %f", &tid, &tx, &ty) == 3) {
+                      ObjMsg om;
+                      om.type = 'T';
+                      om.id = tid;
+                      om.x = tx;
+                      om.y = ty;
+                      write(fdTtoB_w, &om, sizeof(om));
+                 }
+                 
+                 send_msg(MySocket, "tok");
+            }
+            else if (strcmp(buf, "drone") == 0) {
+                // rcv x, y; snd dok <drone>
+                recv_msg(MySocket, buf, sizeof(buf)); // x,y
+                float rx, ry;
+                // Parse remote drone pos (to show as obstacle)
+                if(sscanf(buf, "%f %f", &rx, &ry) == 2) {
+                    ObjMsg om;
+                    om.type = 'D'; 
+                    om.id = 0;     
+                    om.x = rx;
+                    om.y = ry;
+                    write(fdOtoB_w, &om, sizeof(om));
+                }
+                
+                char dok_msg[300];
+                snprintf(dok_msg, sizeof(dok_msg), "dok %s", buf);
+                send_msg(MySocket, dok_msg);
+            }
+            else if (strcmp(buf, "obst") == 0) {
+                // snd x, y; rcv pok <obstacle>
+                char pos_msg[64];
+                snprintf(pos_msg, sizeof(pos_msg), "%f %f", last_local_x, last_local_y);
+                send_msg(MySocket, pos_msg);
+                
+                recv_msg(MySocket, buf, sizeof(buf)); // pok ...
+            }
+
+            // Heartbeat
+            counter++;
+            if (counter >= 20) {
+                union sigval value;
+                value.sival_int = PROCESS_NETWORK | (AREA_COMPUTE << 8); 
+                if (wd_pid > 0) {
+                    sigqueue(wd_pid, SIGUSR1, value);
+                }
+                counter = 0;
+            }
+        }
+    }
+
+    cleanup(0);
+    return 0;
+}*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -11,343 +313,226 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <sys/socket.h>
-#include <sys/select.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
-#include <stdarg.h>
+#include "logger.h"
+#include "common.h"
 
-// --- MOCKUP STRUTTURE (Allineate con common.h della Blackboard) ---
-typedef struct { 
-    float x, y; 
-    float vx, vy; // <--- CAMPI AGGIUNTI PER MANTENERE L'ALLINEAMENTO (16 byte)
-} StateMsg;
-
-typedef struct { char type; int id; float x, y; } ObjMsg;
-// -------------------------------------------------------------
-
-#define BUFSZ 1024
-#define LOG_PATH_SC "network.log"
-
-// Stati del Protocollo
-typedef enum {
-    SV_SEND_CMD_DRONE,
-    SV_SEND_DATA_DRONE,
-    SV_WAIT_DOK,
-    SV_SEND_CMD_OBST,
-    SV_WAIT_DATA_OBST,
-    CL_WAIT_COMMAND,
-    CL_WAIT_DRONE_DATA,
-    CL_SEND_OBST_DATA,
-    CL_WAIT_POK
-} NetState;
-
-static NetState net_state;
-static int MySocket = -1;
-
-// Buffer di ricezione persistente
-typedef struct {
-    char data[BUFSZ];
-    int len;
-} SocketBuffer;
-
-static SocketBuffer sock_buf = { .len = 0 };
-static float my_last_x = 0.0f;
-static float my_last_y = 0.0f;
-
-// --- LOGGING ---
-void log_sc(const char *fmt, ...) {
-    FILE *fp = fopen(LOG_PATH_SC, "a");
-    if (!fp) return;
-    va_list args;
-    va_start(args, fmt);
-    fprintf(fp, "[%d] ", getpid());
-    vfprintf(fp, fmt, args);
-    fprintf(fp, "\n");
-    va_end(args);
-    fclose(fp);
-}
-
-// --- NETWORK UTILS ---
-void set_nonblocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags != -1) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-}
-
-void send_msg_strict(int sock, const char *fmt, ...) {
-    char buf[BUFSZ];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf) - 2, fmt, args); 
-    va_end(args);
-    int len = strlen(buf);
-    // log_sc("[OUT] Raw: '%s'", buf); // Commentato per ridurre spam
-    if (len == 0 || buf[len-1] != '\n') {
-        buf[len] = '\n';
-        buf[len+1] = '\0';
-        len++;
-    }
-    ssize_t n = write(sock, buf, len);
-    if (n < 0) log_sc("[ERR] Write failed: %s", strerror(errno));
-}
-
-int init_server(int port) {
-    int s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) return -1;
-    int opt = 1; 
-    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    struct sockaddr_in a = {0};
-    a.sin_family = AF_INET;
-    a.sin_addr.s_addr = INADDR_ANY;
-    a.sin_port = htons(port);
-    if (bind(s, (struct sockaddr*)&a, sizeof(a)) < 0) {
-        log_sc("[NET-ERR] Bind failed: %s", strerror(errno));
-        close(s);
-        return -1;
-    }
-    listen(s, 1);
-    log_sc("[NET-SRV] Listening on port %d...", port);
-    struct sockaddr_in cli;
-    socklen_t len = sizeof(cli);
-    int client_fd = accept(s, (struct sockaddr*)&cli, &len);
-    if (client_fd >= 0) {
-        log_sc("[NET-SRV] Client connected from %s", inet_ntoa(cli.sin_addr));
-        close(s); 
-    }
-    return client_fd;
-}
-
-int init_client(const char *addr, int port) {
-    int s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) return -1;
-    struct sockaddr_in a = {0};
-    a.sin_family = AF_INET; 
-    a.sin_port = htons(port);
-    inet_pton(AF_INET, addr, &a.sin_addr);
-    log_sc("[NET-CLI] Connecting to %s:%d ...", addr, port);
-    while (connect(s, (struct sockaddr*)&a, sizeof(a)) < 0) {
-        log_sc("[NET-CLI] Retrying connection...");
-        sleep(1);
-    }
-    log_sc("[NET-CLI] Connected!");
-    return s;
-}
-
-int read_chunk(int sock) {
-    if (sock_buf.len >= BUFSZ - 1) return 0;
-    ssize_t n = read(sock, sock_buf.data + sock_buf.len, BUFSZ - 1 - sock_buf.len);
-    if (n > 0) {
-        sock_buf.len += n;
-        sock_buf.data[sock_buf.len] = '\0'; 
-        return 1;
-    }
-    if (n == 0) return -1;
-    return 0;
-}
-
-int pop_line(char *out, int max) {
-    char *p = strchr(sock_buf.data, '\n');
-    if (p) {
-        int len = p - sock_buf.data;
-        if (len >= max) len = max - 1;
-        memcpy(out, sock_buf.data, len);
-        out[len] = '\0'; 
-        // log_sc("[IN] Parsed: '%s'", out); // Commentato per ridurre spam
-        int rem = sock_buf.len - (len + 1);
-        memmove(sock_buf.data, p + 1, rem);
-        sock_buf.len = rem;
-        sock_buf.data[sock_buf.len] = '\0';
-        return 1;
-    }
-    return 0;
-}
-
-int read_line_blocking(int fd, char *buf, int sz) {
-    int i = 0; char c;
-    while (i < sz - 1) {
-        if (read(fd, &c, 1) <= 0) return -1;
-        if (c == '\n') break;
-        buf[i++] = c;
-    }
-    buf[i] = '\0';
-    log_sc("[HANDSHAKE] Read: '%s'", buf);
-    return i;
-}
+int MySocket = -1;
 
 void cleanup(int sig) {
     (void)sig;
     if (MySocket != -1) close(MySocket);
-    log_sc("--- EXITING ---");
+    log_system("NETWORK", "exiting");
     exit(0);
 }
 
-// ======================================================================================
-//                                      MAIN
-// ======================================================================================
+// --- Helpers ---
+
+// Send null-terminated message
+void send_msg(int sock, const char *msg) {
+    ssize_t n = send(sock, msg, strlen(msg) + 1, 0); // include \0
+    char logbuf[256];
+    snprintf(logbuf, sizeof(logbuf), "sending '%s' (%ld bytes)", msg, n);
+    log_system("NETWORK", logbuf);
+    if (n < 0) log_system("NETWORK", "send failed");
+}
+
+// Receive full null-terminated message
+int recv_full_msg(int sock, char *buf, size_t size) {
+    size_t pos = 0;
+    while (pos < size - 1) {
+        ssize_t n = recv(sock, buf + pos, 1, 0);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) continue;
+            log_system("NETWORK", "recv failed");
+            return -1;
+        } else if (n == 0) {
+            log_system("NETWORK", "connection closed");
+            return 0;
+        } else {
+            if (buf[pos] == '\0') break;
+            pos++;
+        }
+    }
+    buf[pos] = '\0';
+    char logbuf[256];
+    snprintf(logbuf, sizeof(logbuf), "recv got '%s'", buf);
+    log_system("NETWORK", logbuf);
+    return 1;
+}
+
+// --- Main ---
+
 int main(int argc, char **argv) {
     if (argc < 8) {
-        fprintf(stderr, "Usage: %s IP Port fdBtoN fdNtoB w h is_server\n", argv[0]);
+        fprintf(stderr, "network: missing fds\n");
         return 1;
     }
+
+    logger_init("../logs");
+    log_process_register("NETWORK", getpid());
+    log_system("NETWORK", "started");
 
     signal(SIGINT, cleanup);
     signal(SIGTERM, cleanup);
-    signal(SIGPIPE, SIG_IGN); 
 
-    const char *ip_addr = argv[1];
-    int port = atoi(argv[2]);
-    int fdBtoN = atoi(argv[3]); 
-    int fdNtoB = atoi(argv[4]); 
-    int w = atoi(argv[5]);
-    int h = atoi(argv[6]);
-    int is_server = atoi(argv[7]);
+    MySocket = atoi(argv[1]);
+    int fdDtoN_r = atoi(argv[2]);
+    int fdOtoB_w = atoi(argv[3]);
+    pid_t wd_pid = (pid_t)atoi(argv[4]);
+    int fdNtoB_Drone_w = atoi(argv[5]);
+    int win_w = atoi(argv[6]);
+    int win_h = atoi(argv[7]);
+    int is_server = (argc >= 9) ? atoi(argv[8]) : 0;
 
-    log_sc("--- STARTING NETWORK (Role: %s) ---", is_server ? "SERVER" : "CLIENT");
-
-    if (is_server) MySocket = init_server(port);
-    else MySocket = init_client(ip_addr, port);
-
-    if (MySocket < 0) {
-        log_sc("[FATAL] Connection setup failed.");
-        return 1;
+    int fdTtoN_r = -1;
+    int fdTtoB_w = -1;
+    if (argc >= 11) {
+        fdTtoN_r = atoi(argv[9]);
+        fdTtoB_w = atoi(argv[10]);
     }
 
-    // HANDSHAKE
+    // Non-blocking pipes
+    fcntl(fdDtoN_r, F_SETFL, fcntl(fdDtoN_r, F_GETFL, 0) | O_NONBLOCK);
+    fcntl(fdOtoB_w, F_SETFL, fcntl(fdOtoB_w, F_GETFL, 0) | O_NONBLOCK);
+    if (fdTtoN_r != -1)
+        fcntl(fdTtoN_r, F_SETFL, fcntl(fdTtoN_r, F_GETFL, 0) | O_NONBLOCK);
+
+    float last_local_x = 0.0f, last_local_y = 0.0f;
     char buf[256];
+
     if (is_server) {
-        send_msg_strict(MySocket, "ok");
-        if (read_line_blocking(MySocket, buf, sizeof(buf)) <= 0 || strcmp(buf, "ook") != 0) cleanup(0);
-        send_msg_strict(MySocket, "size %d %d", w, h);
-        if (read_line_blocking(MySocket, buf, sizeof(buf)) <= 0) cleanup(0); 
-        net_state = SV_SEND_CMD_DRONE;
+        log_system("NETWORK", "Starting Server Protocol");
+
+        // --- HANDSHAKE ---
+        send_msg(MySocket, "ok");
+        if (recv_full_msg(MySocket, buf, sizeof(buf)) <= 0 || strcmp(buf, "ook") != 0) {
+            log_system("NETWORK", "Handshake failed");
+            cleanup(0);
+        }
+        log_system("NETWORK", "Handshake OOK received");
+
+        char size_msg[64];
+        snprintf(size_msg, sizeof(size_msg), "size %d %d", win_w, win_h);
+        send_msg(MySocket, size_msg);
+        recv_full_msg(MySocket, buf, sizeof(buf));
+        log_system("NETWORK", "Handshake size confirmed");
+
+        // --- MAIN LOOP ---
+        while (1) {
+            // Forward local drone state
+            StateMsg local_state;
+            while (read(fdDtoN_r, &local_state, sizeof(local_state)) > 0) {
+                last_local_x = local_state.x;
+                last_local_y = local_state.y;
+                write(fdNtoB_Drone_w, &local_state, sizeof(local_state));
+                log_system("NETWORK", "Forwarded drone state to blackboard");
+            }
+
+            // Forward targets
+            if (fdTtoN_r != -1) {
+                ObjMsg target_msg;
+                while (read(fdTtoN_r, &target_msg, sizeof(target_msg)) > 0) {
+                    write(fdTtoB_w, &target_msg, sizeof(target_msg));
+                    send_msg(MySocket, "target");
+                    char t_str[64];
+                    snprintf(t_str, sizeof(t_str), "%d %f %f", target_msg.id, target_msg.x, target_msg.y);
+                    send_msg(MySocket, t_str);
+                    recv_full_msg(MySocket, buf, sizeof(buf)); // expect tok
+                    log_system("NETWORK", "Target sent and ACK received");
+                }
+            }
+
+            // Send drone position
+            send_msg(MySocket, "drone");
+            char pos_msg[64];
+            snprintf(pos_msg, sizeof(pos_msg), "%f %f", last_local_x, last_local_y);
+            send_msg(MySocket, pos_msg);
+            recv_full_msg(MySocket, buf, sizeof(buf)); // expect dok
+            log_system("NETWORK", "Drone sent, dok received");
+
+            // Request obstacles
+            send_msg(MySocket, "obst");
+            if (recv_full_msg(MySocket, buf, sizeof(buf)) > 0) {
+                float rx=0, ry=0;
+                if (sscanf(buf, "%f %f", &rx, &ry) == 2) {
+                    ObjMsg om = {'D', 0, rx, ry};
+                    write(fdOtoB_w, &om, sizeof(om));
+                    log_system("NETWORK", "Obstacle received and forwarded");
+                }
+                char pok_msg[64];
+                snprintf(pok_msg, sizeof(pok_msg), "pok %f %f", rx, ry);
+                send_msg(MySocket, pok_msg);
+            }
+
+            usleep(20000);
+        }
+
     } else {
-        if (read_line_blocking(MySocket, buf, sizeof(buf)) <= 0 || strcmp(buf, "ok") != 0) cleanup(0);
-        send_msg_strict(MySocket, "ook");
-        if (read_line_blocking(MySocket, buf, sizeof(buf)) <= 0) cleanup(0);
-        send_msg_strict(MySocket, "sok %d %d", w, h);
-        net_state = CL_WAIT_COMMAND;
-    }
+        // CLIENT
+        log_system("NETWORK", "Starting Client Protocol");
 
-    log_sc("[INIT] Handshake Complete. Entering Loop.");
+        // --- HANDSHAKE ---
+        if (recv_full_msg(MySocket, buf, sizeof(buf)) <= 0) cleanup(0); // ok
+        log_system("NETWORK", "Handshake OK received");
+        send_msg(MySocket, "ook");
 
-    set_nonblocking(MySocket);
-    set_nonblocking(fdBtoN);
+        if (recv_full_msg(MySocket, buf, sizeof(buf)) <= 0) cleanup(0); // size
+        char sok_msg[64];
+        snprintf(sok_msg, sizeof(sok_msg), "sok %s", buf + 5);
+        send_msg(MySocket, sok_msg);
+        log_system("NETWORK", "Handshake size ACK sent");
 
-    fd_set rset;
-    struct timeval tv;
-    float rx, ry;
-
-    while (1) {
-        FD_ZERO(&rset);
-        FD_SET(MySocket, &rset);
-        FD_SET(fdBtoN, &rset);
-        int maxfd = (MySocket > fdBtoN) ? MySocket : fdBtoN;
-        
-        tv.tv_sec = 0; 
-        tv.tv_usec = 5000; 
-
-        if (select(maxfd + 1, &rset, NULL, NULL, &tv) < 0) {
-            if (errno == EINTR) continue;
-            break;
-        }
-
-        // [IPC] Leggi input locale (Blackboard -> Network)
-        if (FD_ISSET(fdBtoN, &rset)) {
-            StateMsg msg;
-            // Leggi e aggiorna. Ora che la dimensione è corretta (16 byte), 
-            // la lettura sarà allineata e my_last_x/y saranno corretti.
-            while (read(fdBtoN, &msg, sizeof(msg)) > 0) {
-                my_last_x = msg.x;
-                my_last_y = msg.y;
-                // log_sc("[DEBUG] Got local state: %.2f %.2f", my_last_x, my_last_y);
+        // --- MAIN LOOP ---
+        while (1) {
+            // Forward local drone state
+            StateMsg local_state;
+            while (read(fdDtoN_r, &local_state, sizeof(local_state)) > 0) {
+                last_local_x = local_state.x;
+                last_local_y = local_state.y;
+                write(fdNtoB_Drone_w, &local_state, sizeof(local_state));
+                log_system("NETWORK", "Forwarded drone state to blackboard");
             }
-        }
 
-        // [NET] Leggi dati remoti nel buffer
-        if (FD_ISSET(MySocket, &rset)) {
-            if (read_chunk(MySocket) == -1) cleanup(0);
-        }
+            // Receive server command
+            if (recv_full_msg(MySocket, buf, sizeof(buf)) <= 0) continue;
 
-        // [LOGIC] Macchina a Stati
-        int changed;
-        do {
-            changed = 0;
-            if (is_server) {
-                switch(net_state) {
-                    case SV_SEND_CMD_DRONE:
-                        send_msg_strict(MySocket, "drone");
-                        net_state = SV_SEND_DATA_DRONE;
-                        changed = 1;
-                        break;
-                    case SV_SEND_DATA_DRONE:
-                        send_msg_strict(MySocket, "%f %f", my_last_x, my_last_y);
-                        net_state = SV_WAIT_DOK;
-                        break;
-                    case SV_WAIT_DOK:
-                        if (pop_line(buf, sizeof(buf))) {
-                            if (sscanf(buf, "dok %f %f", &rx, &ry) == 2) {
-                                net_state = SV_SEND_CMD_OBST;
-                                changed = 1;
-                            }
-                        }
-                        break;
-                    case SV_SEND_CMD_OBST:
-                        send_msg_strict(MySocket, "obst");
-                        net_state = SV_WAIT_DATA_OBST;
-                        break;
-                    case SV_WAIT_DATA_OBST:
-                        if (pop_line(buf, sizeof(buf))) {
-                            if (sscanf(buf, "%f %f", &rx, &ry) == 2) {
-                                ObjMsg om = { .type='D', .id=0, .x=rx, .y=ry };
-                                write(fdNtoB, &om, sizeof(om));
-                                send_msg_strict(MySocket, "pok %f %f", rx, ry);
-                                net_state = SV_SEND_CMD_DRONE;
-                                changed = 1;
-                            }
-                        }
-                        break;
+            if (strcmp(buf, "drone") == 0) {
+                if (recv_full_msg(MySocket, buf, sizeof(buf)) <= 0) continue;
+                float rx, ry;
+                if (sscanf(buf, "%f %f", &rx, &ry) == 2) {
+                    ObjMsg om = {'D', 0, rx, ry};
+                    write(fdOtoB_w, &om, sizeof(om));
+                    log_system("NETWORK", "Drone coords received and forwarded");
+                    char dok_msg[64];
+                    snprintf(dok_msg, sizeof(dok_msg), "dok %f %f", rx, ry);
+                    send_msg(MySocket, dok_msg);
                 }
-            } else {
-                switch(net_state) {
-                    case CL_WAIT_COMMAND:
-                        if (pop_line(buf, sizeof(buf))) {
-                            if (strcmp(buf, "drone") == 0) {
-                                net_state = CL_WAIT_DRONE_DATA;
-                                changed = 1;
-                            } else if (strcmp(buf, "obst") == 0) {
-                                net_state = CL_SEND_OBST_DATA;
-                                changed = 1;
-                            } else if (strcmp(buf, "q") == 0) {
-                                cleanup(0);
-                            }
-                        }
-                        break;
-                    case CL_WAIT_DRONE_DATA:
-                        if (pop_line(buf, sizeof(buf))) {
-                            if (sscanf(buf, "%f %f", &rx, &ry) == 2) {
-                                ObjMsg om = { .type='D', .id=0, .x=rx, .y=ry };
-                                write(fdNtoB, &om, sizeof(om));
-                                send_msg_strict(MySocket, "dok %f %f", rx, ry);
-                                net_state = CL_WAIT_COMMAND;
-                            }
-                        }
-                        break;
-                    case CL_SEND_OBST_DATA:
-                        send_msg_strict(MySocket, "%f %f", my_last_x, my_last_y);
-                        net_state = CL_WAIT_POK;
-                        break;
-                    case CL_WAIT_POK:
-                        if (pop_line(buf, sizeof(buf))) {
-                            if (sscanf(buf, "pok %f %f", &rx, &ry) == 2) {
-                                net_state = CL_WAIT_COMMAND;
-                                changed = 1;
-                            }
-                        }
-                        break;
+            } else if (strcmp(buf, "obst") == 0) {
+                char pos_msg[64];
+                snprintf(pos_msg, sizeof(pos_msg), "%f %f", last_local_x, last_local_y);
+                send_msg(MySocket, pos_msg);
+                recv_full_msg(MySocket, buf, sizeof(buf)); // pok
+                log_system("NETWORK", "Obstacle sent, pok received");
+            } else if (strcmp(buf, "target") == 0) {
+                if (recv_full_msg(MySocket, buf, sizeof(buf)) <= 0) continue;
+                int tid; float tx, ty;
+                if (sscanf(buf, "%d %f %f", &tid, &tx, &ty) == 3) {
+                    ObjMsg om = {'T', tid, tx, ty};
+                    write(fdTtoB_w, &om, sizeof(om));
+                    log_system("NETWORK", "Target received and forwarded");
                 }
+                send_msg(MySocket, "tok");
             }
-        } while(changed);
+
+            usleep(20000);
+        }
     }
 
     cleanup(0);
     return 0;
 }
+
+
+
+
