@@ -249,4 +249,4 @@ If you are running them on **two separate computers** (A and B):
 This project was tested with the group **samu_luca** on the 15th of January in Prof. Zaccaria's lab.
 
 ## Exam Date
-Both of the students of this group have taken the exame on the 13th of January 2026.
+Both of the students of this group (Antonio Mazzotta and Arianna Bardone) have taken the exam on the 13th of January 2026.
