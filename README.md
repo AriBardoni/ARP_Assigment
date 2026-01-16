@@ -245,5 +245,8 @@ If you are running them on **two separate computers** (A and B):
 1. On Computer A (Server), find the local IP address by running `ip addr` or `hostname -I` in a terminal.
 2. On Computer B (Client), enter that IP address (e.g., `192.168.1.X`) when prompted.
 
-## Test
+## Group Test
 This project was tested with the group **samu_luca** on the 15th of January in Prof. Zaccaria's lab.
+
+## Exam Date
+Both of the students of this group have taken the exame on the 13th of January 2026.
