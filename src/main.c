@@ -85,6 +85,10 @@ pid_t spawn_blackboard(char *start_path, char *wdPidStr,
             snprintf(geom, sizeof(geom), "%dx%d", win_w, win_h);
             argsB[i++] = "--qwindowgeometry";
             argsB[i++] = geom;
+        } else {
+            // Default Geometry requested by user
+            argsB[i++] = "--qwindowgeometry";
+            argsB[i++] = "99x24";
         }
 
         argsB[i++] = "--workdir";
@@ -365,6 +369,7 @@ void run_local(char *start_path) {
 
         char *argsI[] = {
             "konsole",
+            "--qwindowgeometry", "99x24", 
             "--workdir", start_path,
             "-e", inputPath, fdItoB_w, wdPidStr,
             NULL
@@ -442,6 +447,7 @@ void run_local(char *start_path) {
 
         char *argsB[] = {
             "konsole",
+            "--qwindowgeometry", "99x24",
             "--workdir", start_path,
             "-e",
             blackPath,
